@@ -4,24 +4,30 @@ const E = {
   view: 'candidatos', modo: 'quadro', busca: '',
   ordem: { campo: 'carimbo', desc: true },
   filtros: filtrosPadrao(),
-  limite: {}, aberto: null, aba: 'dados', cv: {}, carregando: false,
+  limite: {}, aberto: null, aba: 'dados', cv: {}, carregando: false, filtrosAbertos: true,
 };
 const POR_COLUNA = 40;
 
 function filtrosPadrao() {
-  return { ocultos: [], area: '', local: '', idadeMin: '', idadeMax: '', escolaridade: '', civil: '', de: '', ate: '' };
+  return { ocultos: [], areas: [], local: '', idadeMin: '', idadeMax: '', escolaridade: '', civil: '', de: '', ate: '' };
 }
 function salvaPrefs() {
-  try { localStorage.setItem('rz_prefs', JSON.stringify({ modo: E.modo, filtros: E.filtros })); } catch { /* sem armazenamento */ }
+  try { localStorage.setItem('rz_prefs', JSON.stringify({ modo: E.modo, filtros: E.filtros, filtrosAbertos: E.filtrosAbertos })); } catch { /* sem armazenamento */ }
 }
 try {
   const p = JSON.parse(localStorage.getItem('rz_prefs') || 'null');
-  if (p) { E.modo = p.modo === 'lista' ? 'lista' : 'quadro'; E.filtros = { ...filtrosPadrao(), ...p.filtros }; }
+  if (p) { E.modo = p.modo === 'lista' ? 'lista' : 'quadro'; E.filtros = { ...filtrosPadrao(), ...p.filtros };
+    if (!Array.isArray(E.filtros.areas)) E.filtros.areas = []; E.filtrosAbertos = p.filtrosAbertos !== false; }
 } catch { /* ignora preferências inválidas */ }
 
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 const $$ = (sel, raiz = document) => [...raiz.querySelectorAll(sel)];
 function icones(raiz = document) { $$('[data-ico]', raiz).forEach((el) => { el.innerHTML = ICONES[el.dataset.ico] || ''; el.style.display = 'inline-flex'; }); }
+// "Excluídos" é um status especial: some do quadro e tem uma tela própria
+const ehExcluidos = (s) => semAcento(s.nome) === 'excluidos';
+const statusExcluidos = () => E.status.find(ehExcluidos);
+const statusAtivos = () => E.status.filter((s) => !ehExcluidos(s));
+const excluido = (c) => statusExcluidos()?.id === c.status_id;
 const statusDe = (id) => E.status.find((s) => s.id === id) || { nome: '—', cor: '#94a3b8', ordem: 99 };
 const candDe = (id) => E.cands.find((c) => c.id === id);
 const histDe = (id) => E.hist.filter((h) => h.candidato_id === id);
@@ -112,6 +118,7 @@ function deriva(c) {
   $('#busca').addEventListener('input', (e) => {
     E.busca = e.target.value;
     E.limite = {};
+    if (E.view === 'excluidos') return renderExcluidos();
     if (E.view !== 'candidatos') { location.hash = 'candidatos'; return; }
     renderResultado();
   });
@@ -139,7 +146,7 @@ async function atualizar(manual) {
   const antes = E.cands.length;
   try {
     await carregar();
-    if (E.view === 'candidatos') renderResultado(); else render();
+    if (E.view === 'candidatos') renderResultado(); else if (E.view !== 'usuarios') render();
     if (E.aberto && candDe(E.aberto)) renderFicha();
     const novos = E.cands.length - antes;
     if (novos > 0) toast(`${novos} nova${novos > 1 ? 's' : ''} candidatura${novos > 1 ? 's' : ''}`);
@@ -151,12 +158,12 @@ async function atualizar(manual) {
 
 function rotear() {
   const v = location.hash.slice(1) || 'candidatos';
-  E.view = ['candidatos', 'status', 'usuarios'].includes(v) && (v !== 'usuarios' || E.me.admin) ? v : 'candidatos';
+  E.view = ['candidatos', 'excluidos', 'status', 'usuarios'].includes(v) && (v !== 'usuarios' || E.me.admin) ? v : 'candidatos';
   $$('.nav-item').forEach((b) => b.classList.toggle('ativo', b.dataset.view === E.view));
   render();
 }
 function render() {
-  ({ candidatos: renderCandidatos, status: renderStatus, usuarios: renderUsuarios })[E.view]();
+  ({ candidatos: renderCandidatos, excluidos: renderExcluidos, status: renderStatus, usuarios: renderUsuarios })[E.view]();
   icones($('#page'));
 }
 async function copiar(texto) {
@@ -187,14 +194,18 @@ function renderCandidatos() {
         <button class="btn btn-out" data-go="status"><span data-ico="tag"></span>Status</button>
       </div>
     </div>
-    <div class="cand-layout">
-      <aside class="panel filters">
-        <div style="display:flex;align-items:center"><h3 class="panel-title" style="margin:0">Filtros</h3>
-          <button class="btn btn-ghost btn-sm" id="limpar" style="margin-left:auto">Limpar</button></div>
+    <div class="cand-layout ${E.filtrosAbertos ? '' : 'fechado'}">
+      <aside class="panel filters" ${E.filtrosAbertos ? '' : 'hidden'}>
+        <div style="display:flex;align-items:center;gap:4px"><h3 class="panel-title" style="margin:0">Filtros</h3>
+          <button class="btn btn-ghost btn-sm" id="limpar" style="margin-left:auto">Limpar</button>
+          <button class="icon-btn" id="recolher" title="Recolher filtros"><span data-ico="left"></span></button></div>
         <div class="grp"><span class="grp-label">Status</span><div id="f-status"></div></div>
-        <label class="grp"><span class="grp-label">Área pretendida</span>
-          <select class="select" data-f="area"><option value="">Todas as áreas</option>
-            ${areas.map(([k, v]) => `<option value="${esc(k)}">${esc(v.rotulo)} (${v.n})</option>`).join('')}</select></label>
+        <div class="grp"><span class="grp-label">Área pretendida <small>(uma ou mais)</small></span>
+          <div class="check-list ${E.verTodasAreas ? '' : 'curta'}">${areas.map(([k, v]) => `
+            <label class="st-check"><input type="checkbox" data-area="${esc(k)}" ${f.areas.includes(k) ? 'checked' : ''}>
+              <span class="area-txt">${esc(v.rotulo)}</span><span class="cnt">${v.n}</span></label>`).join('')}</div>
+          ${areas.length > 6 ? `<button class="btn btn-ghost btn-sm" id="ver-areas" style="align-self:flex-start">${E.verTodasAreas ? 'Mostrar menos' : `Ver todas (${areas.length})`}</button>` : ''}
+        </div>
         <label class="grp"><span class="grp-label">Bairro / cidade</span>
           <input class="input" data-f="local" placeholder="Ex.: CIC, Pinhais, Sítio Cercado"></label>
         <div class="grp"><span class="grp-label">Idade</span>
@@ -209,6 +220,7 @@ function renderCandidatos() {
       </aside>
       <div style="min-width:0">
         <div class="board-bar">
+          <button class="btn btn-out btn-sm" id="abrir-filtros" ${E.filtrosAbertos ? 'hidden' : ''}><span data-ico="filter"></span>Filtros<span id="n-filtros"></span></button>
           <span class="result" id="resultado"></span>
           <div class="seg">
             <button data-modo="quadro"><span data-ico="board"></span>Quadro</button>
@@ -224,7 +236,16 @@ function renderCandidatos() {
     el.value = f[el.dataset.f] ?? '';
     el.addEventListener('input', () => { f[el.dataset.f] = el.value; E.limite = {}; salvaPrefs(); renderResultado(); });
   });
+  $$('[data-area]').forEach((cb) => cb.addEventListener('change', () => {
+    const k = cb.dataset.area;
+    f.areas = cb.checked ? [...f.areas, k] : f.areas.filter((x) => x !== k);
+    E.limite = {}; salvaPrefs(); renderResultado();
+  }));
+  $('#ver-areas')?.addEventListener('click', () => { E.verTodasAreas = !E.verTodasAreas; render(); });
   $('#limpar').addEventListener('click', () => { E.filtros = filtrosPadrao(); salvaPrefs(); render(); });
+  const alternaFiltros = () => { E.filtrosAbertos = !E.filtrosAbertos; salvaPrefs(); render(); };
+  $('#recolher').addEventListener('click', alternaFiltros);
+  $('#abrir-filtros').addEventListener('click', alternaFiltros);
   $$('[data-modo]').forEach((b) => b.addEventListener('click', () => { E.modo = b.dataset.modo; salvaPrefs(); renderResultado(); }));
   renderResultado();
 }
@@ -233,8 +254,9 @@ function filtrados() {
   const f = E.filtros, q = semAcento(E.busca).trim(), qDig = E.busca.replace(/\D/g, '');
   const local = semAcento(f.local).trim();
   return E.cands.filter((c) => {
+    if (excluido(c)) return false;
     if (q && !c.busca.includes(q) && !(qDig.length >= 4 && c.telDig.includes(qDig))) return false;
-    if (f.area && !c.areas.some((a) => semAcento(a) === f.area)) return false;
+    if (f.areas.length && !c.areas.some((a) => f.areas.includes(semAcento(a)))) return false;
     if (local && !semAcento(c.local).includes(local)) return false;
     if (f.idadeMin && (c.idade === null || c.idade < Number(f.idadeMin))) return false;
     if (f.idadeMax && (c.idade === null || c.idade > Number(f.idadeMax))) return false;
@@ -250,12 +272,13 @@ function renderResultado() {
   const area = $('#area');
   if (!area) return;
   const base = filtrados();
-  const visiveis = E.status.filter((s) => !E.filtros.ocultos.includes(s.id));
+  const visiveis = statusAtivos().filter((s) => !E.filtros.ocultos.includes(s.id));
+  const ativos = E.cands.filter((c) => !excluido(c)).length;
   const lista = base.filter((c) => !E.filtros.ocultos.includes(c.status_id));
   const notas = {};
   E.hist.forEach((h) => { if (h.tipo === 'nota') notas[h.candidato_id] = (notas[h.candidato_id] || 0) + 1; });
 
-  $('#f-status').innerHTML = E.status.map((s) => `
+  $('#f-status').innerHTML = statusAtivos().map((s) => `
     <label class="st-check"><input type="checkbox" data-st="${esc(s.id)}" ${E.filtros.ocultos.includes(s.id) ? '' : 'checked'}>
       <span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}
       <span class="cnt">${base.filter((c) => c.status_id === s.id).length}</span></label>`).join('');
@@ -265,7 +288,10 @@ function renderResultado() {
     salvaPrefs(); renderResultado();
   }));
 
-  $('#resultado').textContent = `${lista.length} de ${E.cands.length} candidato${E.cands.length === 1 ? '' : 's'}`;
+  $('#resultado').textContent = `${lista.length} de ${ativos} candidato${ativos === 1 ? '' : 's'}`;
+  const f = E.filtros;
+  const nAtivos = ['local', 'idadeMin', 'idadeMax', 'escolaridade', 'civil', 'de', 'ate'].filter((k) => f[k]).length + (f.ocultos.length ? 1 : 0) + (f.areas.length ? 1 : 0);
+  $('#n-filtros').textContent = nAtivos ? ` (${nAtivos})` : '';
   $$('[data-modo]').forEach((b) => b.classList.toggle('ativo', b.dataset.modo === E.modo));
 
   if (!E.cands.length) {
@@ -357,8 +383,7 @@ async function mudarStatus(id, statusId) {
   if (!c || c.status_id === statusId) return;
   const anterior = c.status_id;
   c.status_id = statusId;
-  if (E.view === 'candidatos') renderResultado();
-  if (E.aberto === id) renderFicha();
+  atualizaTela(id);
   try {
     const r = await api('mudarStatus', { id, status_id: statusId });
     if (r.historico) E.hist.push(r.historico);
@@ -367,8 +392,55 @@ async function mudarStatus(id, statusId) {
     c.status_id = anterior;
     toast(err.message, true);
   }
+  atualizaTela(id);
+}
+function atualizaTela(id) {
   if (E.view === 'candidatos') renderResultado();
+  if (E.view === 'excluidos') renderExcluidos();
   if (E.aberto === id) renderFicha();
+}
+
+// ───────────────────────── Excluídos ─────────────────────────
+async function excluirCandidato(id) {
+  try {
+    if (!statusExcluidos()) {
+      await api('salvarStatus', { nome: 'Excluídos', cor: '#64748b' });
+      await carregar();
+    }
+    fecharCandidato();
+    await mudarStatus(id, statusExcluidos().id);
+  } catch (err) { toast(err.message, true); }
+}
+async function restaurarCandidato(id) {
+  // Volta para o status em que estava antes de ser excluído (ou para o inicial)
+  const ultima = histDe(id).filter((h) => h.tipo === 'status' && /para "Exclu[ií]dos"/i.test(h.texto))
+    .sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
+  const nomeAnterior = ultima?.texto.match(/de "(.+?)" para/)?.[1];
+  const ativos = statusAtivos();
+  const alvo = ativos.find((s) => s.nome === nomeAnterior) || ativos.find((s) => s.inicial) || ativos[0];
+  await mudarStatus(id, alvo.id);
+}
+
+function renderExcluidos() {
+  const q = semAcento(E.busca).trim();
+  const quando = (c) => histDe(c.id).filter((h) => h.tipo === 'status').map((h) => h.criado_em).sort().pop() || '';
+  const lista = E.cands.filter((c) => excluido(c) && (!q || c.busca.includes(q)))
+    .sort((a, b) => quando(b).localeCompare(quando(a)));
+  $('#page').innerHTML = `
+    <div class="page-head"><div><h1>Excluídos</h1><p>Candidatos retirados do quadro. Restaure para voltarem ao processo.</p></div></div>
+    ${lista.length ? `<div class="panel table-wrap" style="padding:0"><table class="list">
+      <thead><tr><th>Nome</th><th>Áreas</th><th>Idade</th><th>Bairro / cidade</th><th>Inscrição</th><th>Excluído em</th><th></th></tr></thead>
+      <tbody>${lista.map((c) => `
+        <tr data-abrir="${esc(c.id)}">
+          <td><b>${esc(c.nome)}</b></td><td style="max-width:260px">${esc(c.areas.join(', ') || '—')}</td><td>${c.idade ?? '—'}</td>
+          <td>${esc(c.local || '—')}</td><td style="white-space:nowrap">${fmtData(c.carimbo)}</td>
+          <td style="white-space:nowrap">${quando(c) ? fmtDataHora(quando(c)) : '—'}</td>
+          <td><button class="btn btn-out btn-sm" data-restaurar="${esc(c.id)}"><span data-ico="restore"></span>Restaurar</button></td>
+        </tr>`).join('')}</tbody></table></div>`
+      : `<div class="panel empty"><span data-ico="trash"></span><div>${q ? 'Nenhum excluído encontrado para essa busca.' : 'Nenhum candidato excluído.'}</div></div>`}`;
+  $$('[data-abrir]').forEach((tr) => tr.addEventListener('click', () => abrirCandidato(tr.dataset.abrir)));
+  $$('[data-restaurar]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); restaurarCandidato(b.dataset.restaurar); }));
+  icones($('#page'));
 }
 
 // ───────────────────────── Ficha do candidato ─────────────────────────
@@ -419,11 +491,14 @@ function renderFicha() {
           <a href="${esc(E.planilhaUrl)}#gid=0&range=A${c.linha}" target="_blank" rel="noopener">Linha ${c.linha} da planilha ↗</a>
         </div>
       </div>
+      ${excluido(c) ? '<button class="btn btn-out btn-sm" id="restaurar"><span data-ico="restore"></span>Restaurar</button>'
+        : '<button class="btn btn-danger btn-sm" id="excluir"><span data-ico="trash"></span>Excluir</button>'}
       <button class="icon-btn" id="fechar" title="Fechar (Esc)"><span data-ico="x"></span></button>
     </div>
+    ${excluido(c) ? '<div class="aviso-excluido">Este candidato está na lista de <b>Excluídos</b> e não aparece no quadro até ser restaurado.</div>' : ''}
     <div class="status-bar">
       <span class="lbl">Status</span>
-      ${E.status.map((s) => `<button class="st-btn ${s.id === c.status_id ? 'ativo' : ''}" data-mudar="${esc(s.id)}" style="--c:${esc(s.cor)}">
+      ${statusAtivos().map((s) => `<button class="st-btn ${s.id === c.status_id ? 'ativo' : ''}" data-mudar="${esc(s.id)}" style="--c:${esc(s.cor)}">
         <span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}</button>`).join('')}
     </div>
     <div class="drawer-body">
@@ -468,6 +543,8 @@ function renderFicha() {
   if (E.aba === 'curriculo') mostrarCurriculo(c);
 
   $('#fechar').addEventListener('click', fecharCandidato);
+  $('#excluir')?.addEventListener('click', () => excluirCandidato(c.id));
+  $('#restaurar')?.addEventListener('click', () => restaurarCandidato(c.id));
   $$('[data-aba]', ov).forEach((b) => b.addEventListener('click', () => { E.aba = b.dataset.aba; renderFicha(); }));
   $$('[data-mudar]', ov).forEach((b) => b.addEventListener('click', () => mudarStatus(c.id, b.dataset.mudar)));
   const salvarNota = async () => {
@@ -524,11 +601,12 @@ async function mostrarCurriculo(c) {
 // ───────────────────────── Status ─────────────────────────
 function renderStatus() {
   const total = (id) => E.cands.filter((c) => c.status_id === id).length;
+  const lista = statusAtivos();
   $('#page').innerHTML = `
     <div class="page-head"><div><h1>Status</h1><p>Etapas do processo seletivo. A ordem aqui é a ordem das colunas do quadro.</p></div></div>
     <div class="panel" style="max-width:780px">
       <h3 class="panel-title">Etapas</h3>
-      <div class="cfg-list">${E.status.map((s, idx) => `
+      <div class="cfg-list">${lista.map((s, idx) => `
         <div class="cfg-row" data-id="${esc(s.id)}">
           <input type="color" class="input-color" value="${esc(s.cor)}" data-campo="cor" title="Cor">
           <input class="input grow" value="${esc(s.nome)}" data-campo="nome" maxlength="40">
@@ -536,7 +614,7 @@ function renderStatus() {
             : '<button class="btn btn-ghost btn-sm" data-inicial title="Novas respostas do formulário entram com este status">Tornar inicial</button>'}
           <span class="meta" style="white-space:nowrap">${total(s.id)} cand.</span>
           <button class="icon-btn" data-mover="-1" ${idx === 0 ? 'disabled' : ''} title="Subir"><span data-ico="up"></span></button>
-          <button class="icon-btn" data-mover="1" ${idx === E.status.length - 1 ? 'disabled' : ''} title="Descer"><span data-ico="down"></span></button>
+          <button class="icon-btn" data-mover="1" ${idx === lista.length - 1 ? 'disabled' : ''} title="Descer"><span data-ico="down"></span></button>
           <button class="icon-btn" data-excluir title="Excluir"><span data-ico="trash"></span></button>
         </div>`).join('')}</div>
       <form class="cfg-add" id="novo-status">
@@ -560,7 +638,7 @@ function renderStatus() {
     $('[data-campo=cor]', row).addEventListener('change', () => salvar());
     $('[data-inicial]', row)?.addEventListener('click', () => salvar({ inicial: true }));
     $$('[data-mover]', row).forEach((b) => b.addEventListener('click', async () => {
-      const ids = E.status.map((x) => x.id);
+      const ids = lista.map((x) => x.id);
       const i = ids.indexOf(id), j = i + Number(b.dataset.mover);
       [ids[i], ids[j]] = [ids[j], ids[i]];
       try { await api('ordenarStatus', { ids }); await aposSalvar('Ordem atualizada'); } catch (err) { toast(err.message, true); }

@@ -4,5 +4,5 @@ window.RZ_CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbz-gNb0lXgjwEXeWlFs_cOYTMBoNLb1dgUkl6jwc8l4iLYYkq9XKyqMWtu6arwh7w/exec',
 
   // (Opcional) link público do Google Forms, para o botão "Copiar link do formulário".
-  FORM_URL: '',
+  FORM_URL: 'https://forms.gle/xbXXofuYbedbL3Y38',
 };
