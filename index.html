@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>RecrutaZen — Processo seletivo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="carregando" id="carregando"><div class="spinner"></div><div>Carregando candidatos…</div></div>
+
+  <div class="app" id="app" hidden>
+    <nav class="side">
+      <div class="logo-mark">R<b>Z</b></div>
+      <button class="nav-item" data-view="candidatos"><span data-ico="users"></span>Candidatos</button>
+      <button class="nav-item" data-view="status"><span data-ico="tag"></span>Status</button>
+      <button class="nav-item" data-view="usuarios" id="nav-usuarios"><span data-ico="user"></span>Usuários</button>
+    </nav>
+
+    <div class="main">
+      <header class="top">
+        <div class="brand">Recruta<b>Zen</b></div>
+        <label class="search"><span data-ico="search"></span><input id="busca" placeholder="Buscar por nome, telefone, bairro ou qualquer resposta…"></label>
+        <div class="top-actions">
+          <button class="btn btn-pri btn-sm hide-sm" id="copiar-form" hidden><span data-ico="copy"></span>Copiar link do formulário</button>
+          <a class="btn btn-out btn-sm hide-sm" id="abrir-planilha" target="_blank" rel="noopener"><span data-ico="sheet"></span>Planilha</a>
+          <button class="icon-btn" id="atualizar" title="Buscar novas respostas"><span data-ico="refresh"></span></button>
+          <div class="user">
+            <div class="avatar" id="avatar"></div>
+            <div class="user-txt"><div class="user-name" id="user-nome"></div><div class="user-role" id="user-papel"></div></div>
+          </div>
+          <button class="icon-btn" id="trocar-senha" title="Trocar minha senha"><span data-ico="key"></span></button>
+          <button class="btn btn-out btn-sm" id="sair">Sair</button>
+        </div>
+      </header>
+      <section class="page" id="page"></section>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="comum.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

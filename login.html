@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Entrar — RecrutaZen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="auth">
+    <aside class="auth-side">
+      <div class="logo-mark">R<b>Z</b></div>
+      <div>
+        <h2>Processo seletivo organizado, do currículo à contratação.</h2>
+        <p>As respostas do formulário viram cards. Acompanhe cada candidato, mude o status e registre tudo no histórico.</p>
+      </div>
+      <small style="color:#9fb0f3">RecrutaZen</small>
+    </aside>
+    <main class="auth-main">
+      <div class="auth-card">
+        <div class="brand">Recruta<b>Zen</b></div>
+        <h1 id="titulo">Entrar</h1>
+        <p class="sub" id="subtitulo">Acesse com seu usuário e senha.</p>
+        <form id="form" autocomplete="on">
+          <div id="erro" class="msg-erro" hidden></div>
+          <label class="field" id="campo-nome" hidden><span>Seu nome</span><input class="input" name="nome" autocomplete="name"></label>
+          <label class="field"><span>Usuário</span><input class="input" name="login" required autocomplete="username" autofocus></label>
+          <label class="field"><span>Senha</span><input class="input" name="senha" type="password" required autocomplete="current-password"></label>
+          <button class="btn btn-pri btn-lg" type="submit" id="btn">Entrar</button>
+        </form>
+      </div>
+    </main>
+  </div>
+  <script src="config.js"></script>
+  <script src="comum.js"></script>
+  <script>
+    const form = document.getElementById('form');
+    const erro = document.getElementById('erro');
+    const btn = document.getElementById('btn');
+    let setup = false;
+    const mostraErro = (msg) => { erro.textContent = msg; erro.hidden = false; };
+
+    api('precisaSetup').then(({ precisaSetup }) => {
+      if (!precisaSetup) return;
+      setup = true;
+      document.getElementById('titulo').textContent = 'Primeiro acesso';
+      document.getElementById('subtitulo').textContent = 'Crie o usuário administrador do sistema.';
+      document.getElementById('campo-nome').hidden = false;
+      form.nome.required = true;
+      form.senha.autocomplete = 'new-password';
+      btn.textContent = 'Criar administrador e entrar';
+    }).catch((e) => mostraErro(e.message));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      erro.hidden = true;
+      btn.disabled = true;
+      const texto = btn.textContent;
+      btn.textContent = 'Entrando…';
+      try {
+        const r = await api(setup ? 'setup' : 'login', Object.fromEntries(new FormData(form)));
+        salvaToken(r.token);
+        location.href = './';
+      } catch (err) {
+        mostraErro(err.message);
+        btn.disabled = false;
+        btn.textContent = texto;
+      }
+    });
+  </script>
+</body>
+</html>
