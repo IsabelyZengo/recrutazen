@@ -105,7 +105,7 @@ a { color: var(--pri); }
 
 /* ── Candidatos: filtros + quadro ── */
 .cand-layout { display: grid; grid-template-columns: 270px 1fr; gap: 20px; align-items: start; }
-.filters { position: sticky; top: 78px; display: flex; flex-direction: column; gap: 16px; max-height: calc(100vh - 96px); overflow: auto; }
+.filters { display: flex; flex-direction: column; gap: 16px; }
 .filters .grp { display: flex; flex-direction: column; gap: 8px; }
 .filters .grp-label { font-size: 11.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--mu); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -123,7 +123,7 @@ a { color: var(--pri); }
 .seg button.ativo { background: var(--pri-l); color: var(--pri); }
 
 .board { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; }
-.col { flex: 0 0 272px; background: #e4e9f8; border-radius: var(--r); display: flex; flex-direction: column; max-height: calc(100vh - 170px); }
+.col { flex: 1 1 0; min-width: 175px; background: #e4e9f8; border-radius: var(--r); display: flex; flex-direction: column; max-height: calc(100vh - 170px); }
 .col-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; font-weight: 800; font-size: 13.5px; }
 .col-head .n { margin-left: auto; background: var(--sf); border-radius: 20px; padding: 1px 9px; font-size: 12px; color: var(--mu); }
 .col-body { padding: 4px 10px 12px; display: flex; flex-direction: column; gap: 9px; overflow-y: auto; min-height: 70px; border-radius: var(--r); transition: background .15s; }
@@ -305,3 +305,9 @@ table.list tbody tr:hover { background: var(--sf2); }
 .card-vaga.mais { background: #eef0f5; color: var(--mu); }
 .icon-btn:disabled { opacity: .35; cursor: default; }
 .col-body > .btn { align-self: center; }
+.cand-layout.fechado { grid-template-columns: 1fr; }
+.grp-label small { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--dm); }
+.check-list { display: flex; flex-direction: column; }
+.check-list.curta .st-check:nth-child(n+7):not(:has(input:checked)) { display: none; }
+.area-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aviso-excluido { background: #fff7e6; color: #8a5300; padding: 9px 22px; font-weight: 600; font-size: 13px; border-bottom: 1px solid var(--bd); }
