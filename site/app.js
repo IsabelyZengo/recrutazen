@@ -298,17 +298,25 @@ function renderResultado() {
     area.innerHTML = '<div class="panel empty"><span data-ico="users"></span><div>Nenhuma resposta na planilha ainda.</div></div>';
   } else if (E.modo === 'quadro') {
     const ordenada = [...lista].sort((a, b) => String(b.carimbo).localeCompare(String(a.carimbo)));
-    area.innerHTML = `<div class="board">${visiveis.map((s) => {
+    // Coluna expandida: mostra só ela, ocupando a largura toda, com os cards em grade
+    const expandida = visiveis.find((s) => s.id === E.expandida);
+    const passo = expandida ? POR_COLUNA * 3 : POR_COLUNA;
+    area.innerHTML = `<div class="board ${expandida ? 'expandido' : ''}">${(expandida ? [expandida] : visiveis).map((s) => {
       const todos = ordenada.filter((c) => c.status_id === s.id);
-      const lim = E.limite[s.id] || POR_COLUNA;
+      const lim = E.limite[s.id] || passo;
       return `<div class="col">
-        <div class="col-head"><span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}<span class="n">${todos.length}</span></div>
+        <div class="col-head"><span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}<span class="n">${todos.length}</span>
+          ${expandida ? '<button class="btn btn-out btn-sm" data-expandir="">Voltar ao quadro</button>'
+            : `<button class="icon-btn col-exp" data-expandir="${esc(s.id)}" title="Expandir esta coluna"><span data-ico="expand"></span></button>`}</div>
         <div class="col-body" data-col="${esc(s.id)}">${todos.slice(0, lim).map((c) => cardHtml(c, s, notas[c.id])).join('') || '<div class="col-empty">Nenhum candidato</div>'}
-          ${todos.length > lim ? `<button class="btn btn-ghost btn-sm" data-mais="${esc(s.id)}">Mostrar mais ${Math.min(POR_COLUNA, todos.length - lim)} de ${todos.length - lim}</button>` : ''}</div>
+          ${todos.length > lim ? `<button class="btn btn-ghost btn-sm mais" data-mais="${esc(s.id)}">Mostrar mais ${Math.min(passo, todos.length - lim)} de ${todos.length - lim}</button>` : ''}</div>
       </div>`;
     }).join('')}</div>`;
     $$('[data-mais]', area).forEach((b) => b.addEventListener('click', () => {
-      E.limite[b.dataset.mais] = (E.limite[b.dataset.mais] || POR_COLUNA) + POR_COLUNA; renderResultado();
+      E.limite[b.dataset.mais] = (E.limite[b.dataset.mais] || passo) + passo; renderResultado();
+    }));
+    $$('[data-expandir]', area).forEach((b) => b.addEventListener('click', () => {
+      E.expandida = b.dataset.expandir || null; E.limite = {}; renderResultado(); window.scrollTo({ top: 0 });
     }));
     ligarArrastar(area);
   } else {
