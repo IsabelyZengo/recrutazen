@@ -28,6 +28,8 @@ const ehExcluidos = (s) => semAcento(s.nome) === 'excluidos';
 const statusExcluidos = () => E.status.find(ehExcluidos);
 const statusAtivos = () => E.status.filter((s) => !ehExcluidos(s));
 const excluido = (c) => statusExcluidos()?.id === c.status_id;
+// Todo candidato novo entra em "Pendente" (mesma regra do Apps Script)
+const statusEntrada = () => E.status.find((s) => semAcento(s.nome).trim() === 'pendente') || E.status.find((s) => s.inicial) || E.status[0];
 const statusDe = (id) => E.status.find((s) => s.id === id) || { nome: '—', cor: '#94a3b8', ordem: 99 };
 const candDe = (id) => E.cands.find((c) => c.id === id);
 const histDe = (id) => E.hist.filter((h) => h.candidato_id === id);
@@ -449,7 +451,7 @@ async function restaurarCandidato(id) {
     .sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
   const nomeAnterior = ultima?.texto.match(/de "(.+?)" para/)?.[1];
   const ativos = statusAtivos();
-  const alvo = ativos.find((s) => s.nome === nomeAnterior) || ativos.find((s) => s.inicial) || ativos[0];
+  const alvo = ativos.find((s) => s.nome === nomeAnterior) || statusEntrada();
   await mudarStatus(id, alvo.id);
 }
 
@@ -496,7 +498,7 @@ function novoCandidato() {
   w.className = 'dialog-wrap';
   w.innerHTML = `<form class="dialog dialog-grande">
     <h3>Novo candidato</h3>
-    <p>Os dados ficam salvos na aba <b>Cadastro manual (RecrutaZen)</b> da planilha e o card entra no quadro como <b>${esc((statusAtivos().find((s) => s.inicial) || statusAtivos()[0])?.nome || "Pendente")}</b>.</p>
+    <p>Os dados ficam salvos na aba <b>Cadastro manual (RecrutaZen)</b> da planilha e o card entra no quadro como <b>${esc(statusEntrada()?.nome || 'Pendente')}</b>.</p>
     <div class="form-grid">
       ${ordem.map(({ p, i }) => campo(p, i)).join('')}
     </div>
@@ -702,12 +704,11 @@ function renderStatus() {
         <div class="cfg-row" data-id="${esc(s.id)}">
           <input type="color" class="input-color" value="${esc(s.cor)}" data-campo="cor" title="Cor">
           <input class="input grow" value="${esc(s.nome)}" data-campo="nome" maxlength="40">
-          ${s.inicial ? '<span class="badge" title="Novas respostas do formulário entram com este status">Inicial</span>'
-            : '<button class="btn btn-ghost btn-sm" data-inicial title="Novas respostas do formulário entram com este status">Tornar inicial</button>'}
+          ${s.id === statusEntrada()?.id ? '<span class="badge" title="Todo candidato novo (formulário ou cadastro manual) entra neste status">Entrada dos novos</span>' : ''}
           <span class="meta" style="white-space:nowrap">${total(s.id)} cand.</span>
           <button class="icon-btn" data-mover="-1" ${idx === 0 ? 'disabled' : ''} title="Subir"><span data-ico="up"></span></button>
           <button class="icon-btn" data-mover="1" ${idx === lista.length - 1 ? 'disabled' : ''} title="Descer"><span data-ico="down"></span></button>
-          <button class="icon-btn" data-excluir title="Excluir"><span data-ico="trash"></span></button>
+          ${s.id === statusEntrada()?.id ? '' : '<button class="icon-btn" data-excluir title="Excluir"><span data-ico="trash"></span></button>'}
         </div>`).join('')}</div>
       <form class="cfg-add" id="novo-status">
         <input type="color" class="input-color" name="cor" value="#7c3aed">
@@ -728,14 +729,13 @@ function renderStatus() {
     };
     $('[data-campo=nome]', row).addEventListener('change', () => salvar());
     $('[data-campo=cor]', row).addEventListener('change', () => salvar());
-    $('[data-inicial]', row)?.addEventListener('click', () => salvar({ inicial: true }));
     $$('[data-mover]', row).forEach((b) => b.addEventListener('click', async () => {
       const ids = lista.map((x) => x.id);
       const i = ids.indexOf(id), j = i + Number(b.dataset.mover);
       [ids[i], ids[j]] = [ids[j], ids[i]];
       try { await api('ordenarStatus', { ids }); await aposSalvar('Ordem atualizada'); } catch (err) { toast(err.message, true); }
     }));
-    $('[data-excluir]', row).addEventListener('click', async () => {
+    $('[data-excluir]', row)?.addEventListener('click', async () => {
       if (!await dialogo({ titulo: `Excluir status "${s.nome}"?`, texto: 'Só é possível excluir status sem candidatos.', confirmar: 'Excluir', perigo: true })) return;
       try { await api('excluirStatus', { id }); await aposSalvar('Status excluído'); } catch (err) { toast(err.message, true); }
     });
