@@ -35,12 +35,20 @@ const dataLocal = (iso) => { const d = new Date(iso); return `${d.getFullYear()}
 
 // ───────────────────────── Interpretação das respostas ─────────────────────────
 function parseNasc(s) {
-  const m = String(s).match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
-  if (!m) return null;
-  let a = Number(m[3]);
-  if (a < 100) a += a > 30 ? 1900 : 2000;
-  const d = new Date(a, Number(m[2]) - 1, Number(m[1]));
-  return isNaN(d) || a < 1920 || d > new Date() ? null : d;
+  let a, mes, dia;
+  let m = String(s).match(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+  if (m) { a = +m[1]; mes = +m[2]; dia = +m[3]; }
+  else {
+    m = String(s).match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+    if (!m) return null;
+    a = +m[3]; dia = +m[1]; mes = +m[2];
+    if (mes > 12 && dia <= 12) [dia, mes] = [mes, dia]; // formato americano (mês/dia/ano)
+    if (a < 100) a += a > 30 ? 1900 : 2000;
+  }
+  const d = new Date(a, mes - 1, dia);
+  // Recusa datas impossíveis (ex.: mês 17) em vez de "virar" para outra data
+  if (d.getFullYear() !== a || d.getMonth() !== mes - 1 || d.getDate() !== dia) return null;
+  return a < 1920 || d > new Date() ? null : d;
 }
 function idadeDe(d) {
   const h = new Date();
@@ -83,9 +91,10 @@ function deriva(c) {
   let areasTxt = R('areas'), civil = R('estadoCivil');
   // Na primeira versão do formulário, as áreas caíam na coluna "Estado civil"
   if (civil && !RE_CIVIL.test(civil) && !areasTxt) { areasTxt = civil; civil = ''; }
-  const nasc = parseNasc(R('nascimento'));
-  let idade = nasc ? idadeDe(nasc) : null;
-  if (idade === null) { const m = R('idade').match(/\d{1,2}/); idade = m ? Number(m[0]) : null; }
+  // Idade: a coluna "Idade" da planilha manda; a data de nascimento só entra se ela estiver vazia
+  const mIdade = R('idade').match(/(?:^|\D)(\d{1,2})(?!\d)/);
+  let idade = mIdade && Number(mIdade[1]) >= 10 ? Number(mIdade[1]) : null;
+  if (idade === null) { const nasc = parseNasc(R('nascimento')); idade = nasc ? idadeDe(nasc) : null; }
   const tel = R('telefone');
   return {
     ...c, nome: R('nome') || '(sem nome)', telefone: tel, telDig: tel.replace(/\D/g, '').replace(/^0+/, ''),
