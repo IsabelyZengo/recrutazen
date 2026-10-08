@@ -330,9 +330,7 @@ function acaoCriarCandidato(req, u) {
   s.getRange(linha, 1, 1, cab.length).setValues([cab.map((h, j) => j === 0 ? new Date()
     : h === COL_ID ? id : h === COL_AUTOR ? u.nome : txt(dados[h], 5000))]);
 
-  const status = listaStatus();
-  const st = status.find((x) => x.id === req.status_id) || status.find((x) => x.inicial) || status[0];
-  inserir(ABAS.cand, [{ id, status_id: st.id, atualizado_em: agora() }]);
+  inserir(ABAS.cand, [{ id, status_id: statusPendente(listaStatus()).id, atualizado_em: agora() }]);
   return { id };
 }
 
@@ -346,6 +344,10 @@ function listaStatus() {
   }
   l.forEach((s) => { s.ordem = Number(s.ordem) || 0; s.inicial = ehSim(s.inicial); });
   return l.sort((a, b) => a.ordem - b.ordem);
+}
+/** Status de entrada de todo candidato novo: sempre "Pendente" (ou o inicial, se o Pendente tiver sido renomeado). */
+function statusPendente(status) {
+  return status.find((s) => String(s.nome).trim().toLowerCase() === 'pendente') || status.find((s) => s.inicial) || status[0];
 }
 function escurece(cor) {
   const n = parseInt(cor.slice(1), 16);
@@ -371,9 +373,11 @@ function statusDaLegenda(rotulo, cor, status) {
 function acaoDados(req, usuario) {
   const r = respostas();
   const status = listaStatus();
-  const inicial = (status.find((s) => s.inicial) || status[0]).id;
+  const inicial = statusPendente(status).id;
   const estados = {};
   ler(ABAS.cand).forEach((e) => { estados[e.id] = e; });
+  // As cores da legenda da planilha só valem na primeira importação; depois, todo novo candidato entra como Pendente
+  const primeiraImportacao = Object.keys(estados).length === 0;
   const porCor = {};
   r.legenda.forEach((l) => { if (l.cor && !porCor[l.cor]) porCor[l.cor] = l.texto; });
 
@@ -381,7 +385,7 @@ function acaoDados(req, usuario) {
   const candidatos = r.linhas.map((l) => {
     let e = estados[l.id];
     if (!e) {
-      const st = l.cor && porCor[l.cor] ? statusDaLegenda(porCor[l.cor], l.cor, status).id : inicial;
+      const st = primeiraImportacao && l.cor && porCor[l.cor] ? statusDaLegenda(porCor[l.cor], l.cor, status).id : inicial;
       e = { id: l.id, status_id: st, atualizado_em: l.carimbo || agora() };
       novos.push(e);
       estados[l.id] = e;
@@ -462,9 +466,10 @@ function acaoOrdenarStatus(req) {
   return { ok: true };
 }
 function acaoExcluirStatus(req) {
-  const s = listaStatus().find((x) => x.id === req.id);
+  const status = listaStatus();
+  const s = status.find((x) => x.id === req.id);
   if (!s) throw erro('Status não encontrado.');
-  if (s.inicial) throw erro('Este é o status inicial das novas candidaturas. Defina outro como inicial antes de excluir.');
+  if (s.inicial || s.id === statusPendente(status).id) throw erro('Este é o status de entrada dos novos candidatos e não pode ser excluído.');
   const n = ler(ABAS.cand).filter((x) => x.status_id === s.id).length;
   if (n) throw erro('Há ' + n + ' candidato(s) com este status. Mova-os antes de excluir.');
   aba(ABAS.status).deleteRow(s._linha);
