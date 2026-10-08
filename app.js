@@ -192,6 +192,7 @@ function renderCandidatos() {
       <div><h1>Candidatos</h1><p>Respostas do formulário “Trabalhe conosco” — triagem, entrevistas e contratações</p></div>
       <div class="acts">
         <button class="btn btn-out" data-go="status"><span data-ico="tag"></span>Status</button>
+        <button class="btn btn-pri" id="novo-candidato"><span data-ico="plus"></span>Novo candidato</button>
       </div>
     </div>
     <div class="cand-layout ${E.filtrosAbertos ? '' : 'fechado'}">
@@ -232,6 +233,7 @@ function renderCandidatos() {
     </div>`;
 
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => { location.hash = b.dataset.go; }));
+  $('#novo-candidato').addEventListener('click', novoCandidato);
   $$('[data-f]').forEach((el) => {
     el.value = f[el.dataset.f] ?? '';
     el.addEventListener('input', () => { f[el.dataset.f] = el.value; E.limite = {}; salvaPrefs(); renderResultado(); });
@@ -333,7 +335,7 @@ function renderResultado() {
 
 function cardHtml(c, s, nNotas) {
   return `<div class="card" draggable="true" data-abrir="${esc(c.id)}" style="--c:${esc(s.cor)}">
-    <div class="card-name">${esc(c.nome)}</div>
+    <div class="card-name">${esc(c.nome)}${c.manual ? ' <span class="selo-manual" title="Cadastrado manualmente">Manual</span>' : ''}</div>
     ${c.areas.length ? `<div class="chips">${c.areas.slice(0, 2).map((a) => `<span class="card-vaga">${esc(a)}</span>`).join('')}${c.areas.length > 2 ? `<span class="card-vaga mais">+${c.areas.length - 2}</span>` : ''}</div>` : ''}
     <div class="card-meta">
       ${c.idade !== null ? `<span><span data-ico="cake"></span>${c.idade} anos</span>` : ''}
@@ -451,6 +453,64 @@ function renderExcluidos() {
   icones($('#page'));
 }
 
+// ───────────────────────── Cadastro manual ─────────────────────────
+function novoCandidato() {
+  const C = E.campos;
+  const curtos = ['nome', 'idade', 'local', 'telefone', 'estadoCivil', 'nascimento', 'escolaridade', 'curriculo'].map((k) => C[k]);
+  const areas = opcoesContadas(E.cands.flatMap((c) => c.areas)).map(([, v]) => v.rotulo);
+  const dica = (i) => i === C.nascimento ? 'dd/mm/aaaa' : i === C.areas ? 'Separe várias áreas por vírgula' : i === C.curriculo ? 'Cole o link do currículo, se tiver' : '';
+  const campo = (p, i) => {
+    const rotulo = i === C.curriculo ? 'Link do currículo (opcional)' : p;
+    const obrig = i === C.nome;
+    const attrs = `name="p${i}" ${obrig ? 'required' : ''} placeholder="${esc(dica(i))}"`;
+    return `<label class="field ${curtos.includes(i) ? '' : 'larga'}"><span>${esc(rotulo)}${obrig ? ' <em>*</em>' : ''}</span>
+      ${curtos.includes(i) || i === C.areas ? `<input class="input" ${attrs} ${i === C.areas ? 'list="dl-areas"' : ''}>`
+        : `<textarea class="textarea" ${attrs} rows="2" style="min-height:64px"></textarea>`}</label>`;
+  };
+  const ordem = E.perguntas.map((p, i) => ({ p, i })).filter(({ i }) => i !== C.carimbo && i !== 0)
+    .sort((a, b) => (curtos.includes(b.i) ? 1 : 0) - (curtos.includes(a.i) ? 1 : 0) || (b.i === C.nome) - (a.i === C.nome));
+
+  const w = document.createElement('div');
+  w.className = 'dialog-wrap';
+  w.innerHTML = `<form class="dialog dialog-grande">
+    <h3>Novo candidato</h3>
+    <p>Os dados ficam salvos na aba <b>Cadastro manual (RecrutaZen)</b> da planilha e o card entra no quadro.</p>
+    <div class="form-grid">
+      ${ordem.slice(0, 1).map(({ p, i }) => campo(p, i)).join('')}
+      <label class="field"><span>Status</span><select class="select" name="status_id">
+        ${statusAtivos().map((s) => `<option value="${esc(s.id)}" ${s.inicial ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select></label>
+      ${ordem.slice(1).map(({ p, i }) => campo(p, i)).join('')}
+    </div>
+    <datalist id="dl-areas">${areas.map((a) => `<option value="${esc(a)}">`).join('')}</datalist>
+    <div class="acts"><button type="button" class="btn btn-ghost" data-cancelar>Cancelar</button>
+      <button class="btn btn-pri" id="salvar-cand">Salvar candidato</button></div>
+  </form>`;
+  const fechar = () => w.remove();
+  w.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); fechar(); } });
+  $('[data-cancelar]', w).addEventListener('click', fechar);
+  $('form', w).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const respostas = {};
+    E.perguntas.forEach((p, i) => { const v = fd.get('p' + i); if (v != null && String(v).trim()) respostas[p] = String(v).trim(); });
+    const btn = $('#salvar-cand', w);
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const r = await api('criarCandidato', { respostas, status_id: fd.get('status_id') });
+      fechar();
+      toast('Candidato cadastrado');
+      await carregar();
+      render();
+      abrirCandidato(r.id);
+    } catch (err) {
+      toast(/desconhecida/i.test(err.message) ? 'Falta atualizar o código do Apps Script para usar o cadastro manual.' : err.message, true);
+      btn.disabled = false; btn.textContent = 'Salvar candidato';
+    }
+  });
+  document.body.append(w);
+  $('input[name="p' + C.nome + '"]', w)?.focus();
+}
+
 // ───────────────────────── Ficha do candidato ─────────────────────────
 function abrirCandidato(id) {
   if (E.aberto !== id) E.aba = 'dados';
@@ -482,7 +542,10 @@ function renderFicha() {
   const noResumo = ['carimbo', 'nome', 'idade', 'local', 'telefone', 'estadoCivil', 'curriculo', 'nascimento', 'areas', 'escolaridade']
     .map((k) => E.campos[k]).filter((i) => i != null);
   const outras = E.perguntas.map((p, i) => ({ p, i })).filter(({ i }) => !noResumo.includes(i));
-  const historico = [...histDe(c.id), { autor: 'Google Forms', tipo: 'inscricao', texto: 'Candidatura recebida pelo formulário.', criado_em: c.carimbo }]
+  const entrada = c.manual
+    ? { autor: c.autor || 'Cadastro manual', tipo: 'inscricao', texto: 'Candidato cadastrado manualmente no sistema.', criado_em: c.carimbo }
+    : { autor: 'Google Forms', tipo: 'inscricao', texto: 'Candidatura recebida pelo formulário.', criado_em: c.carimbo };
+  const historico = [...histDe(c.id), entrada]
     .sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
 
   ov.innerHTML = `<div class="drawer" role="dialog" aria-label="Ficha do candidato">
@@ -496,7 +559,8 @@ function renderFicha() {
           ${c.telefone ? `<a href="tel:${esc(c.telDig)}">${esc(c.telefone)}</a>` : ''}
           ${zap ? `<a href="https://wa.me/${esc(zap)}" target="_blank" rel="noopener">WhatsApp ↗</a>` : ''}
           <span>Inscrito em ${fmtDataHora(c.carimbo)}</span>
-          <a href="${esc(E.planilhaUrl)}#gid=0&range=A${c.linha}" target="_blank" rel="noopener">Linha ${c.linha} da planilha ↗</a>
+          ${c.manual ? `<span>Cadastro manual${c.autor ? ` por ${esc(c.autor)}` : ''}</span>`
+            : `<a href="${esc(E.planilhaUrl)}#gid=0&range=A${c.linha}" target="_blank" rel="noopener">Linha ${c.linha} da planilha ↗</a>`}
         </div>
       </div>
       ${excluido(c) ? '<button class="btn btn-out btn-sm" id="restaurar"><span data-ico="restore"></span>Restaurar</button>'
