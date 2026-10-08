@@ -200,8 +200,10 @@ function renderCandidatos() {
         <div style="display:flex;align-items:center;gap:4px"><h3 class="panel-title" style="margin:0">Filtros</h3>
           <button class="btn btn-ghost btn-sm" id="limpar" style="margin-left:auto">Limpar</button>
           <button class="icon-btn" id="recolher" title="Recolher filtros"><span data-ico="left"></span></button></div>
-        <div class="grp"><span class="grp-label">Status</span><div id="f-status"></div></div>
-        <div class="grp"><span class="grp-label">Área pretendida <small>(uma ou mais)</small></span>
+        <div class="grp"><div class="grp-head"><span class="grp-label">Status</span>
+          <button type="button" class="link-btn" id="todos-status"></button></div><div id="f-status"></div></div>
+        <div class="grp"><div class="grp-head"><span class="grp-label">Área pretendida <small>(uma ou mais)</small></span>
+          <button type="button" class="link-btn" id="todas-areas">${areas.length && areas.every(([k]) => f.areas.includes(k)) ? 'Desmarcar todas' : 'Selecionar todas'}</button></div>
           <div class="check-list ${E.verTodasAreas ? '' : 'curta'}">${areas.map(([k, v]) => `
             <label class="st-check"><input type="checkbox" data-area="${esc(k)}" ${f.areas.includes(k) ? 'checked' : ''}>
               <span class="area-txt">${esc(v.rotulo)}</span><span class="cnt">${v.n}</span></label>`).join('')}</div>
@@ -241,9 +243,19 @@ function renderCandidatos() {
   $$('[data-area]').forEach((cb) => cb.addEventListener('change', () => {
     const k = cb.dataset.area;
     f.areas = cb.checked ? [...f.areas, k] : f.areas.filter((x) => x !== k);
+    $('#todas-areas').textContent = areas.every(([a]) => f.areas.includes(a)) ? 'Desmarcar todas' : 'Selecionar todas';
     E.limite = {}; salvaPrefs(); renderResultado();
   }));
   $('#ver-areas')?.addEventListener('click', () => { E.verTodasAreas = !E.verTodasAreas; render(); });
+  $('#todas-areas').addEventListener('click', () => {
+    const todas = areas.map(([k]) => k);
+    f.areas = todas.every((k) => f.areas.includes(k)) ? [] : todas;
+    E.limite = {}; salvaPrefs(); render();
+  });
+  $('#todos-status').addEventListener('click', () => {
+    f.ocultos = f.ocultos.length ? [] : statusAtivos().map((x) => x.id);
+    E.limite = {}; salvaPrefs(); renderResultado();
+  });
   $('#limpar').addEventListener('click', () => { E.filtros = filtrosPadrao(); salvaPrefs(); render(); });
   const alternaFiltros = () => { E.filtrosAbertos = !E.filtrosAbertos; salvaPrefs(); render(); };
   $('#recolher').addEventListener('click', alternaFiltros);
@@ -280,6 +292,7 @@ function renderResultado() {
   const notas = {};
   E.hist.forEach((h) => { if (h.tipo === 'nota') notas[h.candidato_id] = (notas[h.candidato_id] || 0) + 1; });
 
+  $('#todos-status').textContent = E.filtros.ocultos.length ? 'Selecionar todos' : 'Desmarcar todos';
   $('#f-status').innerHTML = statusAtivos().map((s) => `
     <label class="st-check"><input type="checkbox" data-st="${esc(s.id)}" ${E.filtros.ocultos.includes(s.id) ? '' : 'checked'}>
       <span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}
