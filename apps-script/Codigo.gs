@@ -14,6 +14,8 @@ const ABAS = {
   hist: { nome: 'RZ_Historico', cab: ['id', 'candidato_id', 'autor', 'tipo', 'texto', 'criado_em'] },
   usu: { nome: 'RZ_Usuarios', cab: ['id', 'nome', 'login', 'senha_hash', 'admin', 'criado_em'] },
 };
+const ABA_MANUAL = 'Cadastro manual (RecrutaZen)';
+const COL_ID = 'ID RecrutaZen', COL_AUTOR = 'Cadastrado por';
 const SESSAO_DIAS = 7;
 const MAX_CV_BYTES = 10 * 1024 * 1024;
 
@@ -38,6 +40,7 @@ const ACOES = {
   login: { publica: true, fn: acaoLogin },
   dados: { escrita: true, fn: acaoDados },
   curriculo: { fn: acaoCurriculo },
+  criarCandidato: { escrita: true, fn: acaoCriarCandidato },
   mudarStatus: { escrita: true, fn: acaoMudarStatus },
   nota: { escrita: true, fn: acaoNota },
   salvarStatus: { escrita: true, fn: acaoSalvarStatus },
@@ -216,7 +219,7 @@ function acaoExcluirUsuario(req, eu) {
 // ───────────────────────── Respostas do formulário ─────────────────────────
 function abaRespostas() {
   const s = SpreadsheetApp.getActive().getSheets()
-    .find((x) => /^carimbo/i.test(String(x.getRange(1, 1).getDisplayValue()).trim()));
+    .find((x) => x.getName() !== ABA_MANUAL && /^carimbo/i.test(String(x.getRange(1, 1).getDisplayValue()).trim()));
   if (!s) throw erro('Não encontrei a aba de respostas do formulário (a primeira coluna deve ser "Carimbo de data/hora").');
   return s;
 }
@@ -243,13 +246,8 @@ function respostas() {
   const n = s.getLastRow(), m = s.getLastColumn();
   const rg = s.getRange(1, 1, n, m);
   const vals = rg.getValues(), disp = rg.getDisplayValues(), cores = rg.getBackgrounds();
-  const perguntas = disp[0].map((p) => String(p).replace(/\s+/g, ' ').trim());
-  const campos = {};
-  Object.keys(CAMPOS).forEach((k) => {
-    const usados = Object.keys(campos).map((x) => campos[x]);
-    const i = perguntas.findIndex((p, j) => CAMPOS[k].test(p) && usados.indexOf(j) < 0);
-    if (i >= 0) campos[k] = i;
-  });
+  const perguntas = disp[0].map(normPergunta);
+  const campos = detectaCampos(perguntas);
   const legenda = [], linhas = [], vistos = {};
   for (let i = 1; i < n; i++) {
     const d = disp[i], v = vals[i];
@@ -266,7 +264,76 @@ function respostas() {
     if (vistos[id]) id += '-' + (++vistos[id]); else vistos[id] = 1;
     linhas.push({ id, linha: i + 1, carimbo, respostas: d.map(String), cor: corDe(cores[i]) });
   }
-  return { perguntas, campos, linhas, legenda };
+  return { perguntas, campos, linhas: linhas.concat(linhasManuais(perguntas)), legenda };
+}
+const normPergunta = (p) => String(p).replace(/\s+/g, ' ').trim();
+function detectaCampos(perguntas) {
+  const campos = {};
+  Object.keys(CAMPOS).forEach((k) => {
+    const usados = Object.keys(campos).map((x) => campos[x]);
+    const i = perguntas.findIndex((p, j) => CAMPOS[k].test(p) && usados.indexOf(j) < 0);
+    if (i >= 0) campos[k] = i;
+  });
+  return campos;
+}
+
+/** Candidatos cadastrados à mão no sistema (aba "Cadastro manual"), alinhados às perguntas do formulário pelo texto do cabeçalho. */
+function linhasManuais(perguntas) {
+  const s = SpreadsheetApp.getActive().getSheetByName(ABA_MANUAL);
+  if (!s || s.getLastRow() < 2) return [];
+  const rg = s.getRange(1, 1, s.getLastRow(), s.getLastColumn());
+  const disp = rg.getDisplayValues(), vals = rg.getValues();
+  const cab = disp[0].map(normPergunta);
+  const iId = cab.indexOf(COL_ID), iAutor = cab.indexOf(COL_AUTOR);
+  const mapa = perguntas.map((p) => cab.indexOf(p));
+  const out = [];
+  for (let i = 1; i < disp.length; i++) {
+    const id = iId >= 0 ? String(disp[i][iId]).trim() : '';
+    if (!id) continue;
+    const v0 = vals[i][0];
+    out.push({
+      id, linha: i + 1, cor: '', manual: true, autor: iAutor >= 0 ? disp[i][iAutor] : '',
+      carimbo: v0 instanceof Date ? v0.toISOString() : parseData(disp[i][0]),
+      respostas: mapa.map((j) => (j >= 0 ? String(disp[i][j]) : '')),
+    });
+  }
+  return out;
+}
+
+function acaoCriarCandidato(req, u) {
+  const ss = SpreadsheetApp.getActive();
+  const principal = abaRespostas();
+  const perguntas = principal.getRange(1, 1, 1, principal.getLastColumn()).getDisplayValues()[0].map(normPergunta);
+  const campos = detectaCampos(perguntas);
+  const dados = req.respostas || {};
+  if (campos.nome == null || !txt(dados[perguntas[campos.nome]])) throw erro('Informe o nome do candidato.');
+
+  let s = ss.getSheetByName(ABA_MANUAL);
+  if (!s) {
+    s = ss.insertSheet(ABA_MANUAL);
+    const cab = perguntas.concat([COL_ID, COL_AUTOR]);
+    s.getRange(1, 1, 1, cab.length).setValues([cab]).setFontWeight('bold');
+    s.setFrozenRows(1);
+  }
+  // Se o formulário ganhou perguntas novas, acrescenta as colunas que faltam
+  let cab = s.getRange(1, 1, 1, s.getLastColumn()).getDisplayValues()[0].map(normPergunta);
+  const faltam = perguntas.concat([COL_ID, COL_AUTOR]).filter((p) => cab.indexOf(p) < 0);
+  if (faltam.length) {
+    s.getRange(1, cab.length + 1, 1, faltam.length).setValues([faltam]).setFontWeight('bold');
+    cab = cab.concat(faltam);
+  }
+
+  const id = novoId('m');
+  const linha = s.getLastRow() + 1;
+  if (linha > s.getMaxRows()) s.insertRowsAfter(s.getMaxRows(), 1);
+  s.getRange(linha, 2, 1, cab.length - 1).setNumberFormat('@');
+  s.getRange(linha, 1, 1, cab.length).setValues([cab.map((h, j) => j === 0 ? new Date()
+    : h === COL_ID ? id : h === COL_AUTOR ? u.nome : txt(dados[h], 5000))]);
+
+  const status = listaStatus();
+  const st = status.find((x) => x.id === req.status_id) || status.find((x) => x.inicial) || status[0];
+  inserir(ABAS.cand, [{ id, status_id: st.id, atualizado_em: agora() }]);
+  return { id };
 }
 
 // ───────────────────────── Status ─────────────────────────
@@ -320,7 +387,8 @@ function acaoDados(req, usuario) {
       estados[l.id] = e;
     }
     const valido = status.some((s) => s.id === e.status_id);
-    return { id: l.id, linha: l.linha, carimbo: l.carimbo, respostas: l.respostas, status_id: valido ? e.status_id : inicial, atualizado_em: e.atualizado_em };
+    return { id: l.id, linha: l.linha, carimbo: l.carimbo, respostas: l.respostas, status_id: valido ? e.status_id : inicial, atualizado_em: e.atualizado_em,
+      manual: !!l.manual, autor: l.autor || '' };
   });
   inserir(ABAS.cand, novos);
 
