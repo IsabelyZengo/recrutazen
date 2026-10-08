@@ -474,12 +474,9 @@ function novoCandidato() {
   w.className = 'dialog-wrap';
   w.innerHTML = `<form class="dialog dialog-grande">
     <h3>Novo candidato</h3>
-    <p>Os dados ficam salvos na aba <b>Cadastro manual (RecrutaZen)</b> da planilha e o card entra no quadro.</p>
+    <p>Os dados ficam salvos na aba <b>Cadastro manual (RecrutaZen)</b> da planilha e o card entra no quadro como <b>${esc((statusAtivos().find((s) => s.inicial) || statusAtivos()[0])?.nome || "Pendente")}</b>.</p>
     <div class="form-grid">
-      ${ordem.slice(0, 1).map(({ p, i }) => campo(p, i)).join('')}
-      <label class="field"><span>Status</span><select class="select" name="status_id">
-        ${statusAtivos().map((s) => `<option value="${esc(s.id)}" ${s.inicial ? 'selected' : ''}>${esc(s.nome)}</option>`).join('')}</select></label>
-      ${ordem.slice(1).map(({ p, i }) => campo(p, i)).join('')}
+      ${ordem.map(({ p, i }) => campo(p, i)).join('')}
     </div>
     <datalist id="dl-areas">${areas.map((a) => `<option value="${esc(a)}">`).join('')}</datalist>
     <div class="acts"><button type="button" class="btn btn-ghost" data-cancelar>Cancelar</button>
@@ -496,7 +493,8 @@ function novoCandidato() {
     const btn = $('#salvar-cand', w);
     btn.disabled = true; btn.textContent = 'Salvando…';
     try {
-      const r = await api('criarCandidato', { respostas, status_id: fd.get('status_id') });
+      // Sem status_id: o Apps Script usa o status inicial (Pendente)
+      const r = await api('criarCandidato', { respostas });
       fechar();
       toast('Candidato cadastrado');
       await carregar();
