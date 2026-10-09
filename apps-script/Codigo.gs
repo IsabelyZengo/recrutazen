@@ -40,6 +40,7 @@ const ACOES = {
   login: { publica: true, fn: acaoLogin },
   dados: { escrita: true, fn: acaoDados },
   curriculo: { fn: acaoCurriculo },
+  novidades: { fn: acaoNovidades },
   criarCandidato: { escrita: true, fn: acaoCriarCandidato },
   mudarStatus: { escrita: true, fn: acaoMudarStatus },
   nota: { escrita: true, fn: acaoNota },
@@ -404,6 +405,7 @@ function acaoDados(req, usuario) {
     candidatos,
     historico: ler(ABAS.hist).map((h) => { delete h._linha; return h; }),
     planilhaUrl: SpreadsheetApp.getActive().getUrl(),
+    assinatura: assinatura(),
   };
 }
 
@@ -475,6 +477,14 @@ function acaoExcluirStatus(req) {
   aba(ABAS.status).deleteRow(s._linha);
   return { ok: true };
 }
+
+// ───────────────────────── Novidades ─────────────────────────
+/** Checagem leve para o site saber se chegou resposta nova ou se alguém mudou status/anotações. */
+function assinatura() {
+  const manual = SpreadsheetApp.getActive().getSheetByName(ABA_MANUAL);
+  return [abaRespostas().getLastRow(), manual ? manual.getLastRow() : 0, aba(ABAS.hist).getLastRow()].join('.');
+}
+function acaoNovidades() { return { assinatura: assinatura() }; }
 
 // ───────────────────────── Currículo ─────────────────────────
 function acaoCurriculo(req) {
