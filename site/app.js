@@ -4,19 +4,37 @@ const E = {
   view: 'candidatos', modo: 'quadro', busca: '',
   ordem: { campo: 'carimbo', desc: true },
   filtros: filtrosPadrao(),
-  limite: {}, aberto: null, aba: 'dados', cv: {}, carregando: false, filtrosAbertos: true,
+  limite: {}, aberto: null, aba: 'dados', cv: {}, carregando: false, filtrosAbertos: true, ordemCards: 'manual',
 };
 const POR_COLUNA = 40;
+const ORDENS_CARDS = { manual: 'Manual (arrastar)', recentes: 'Mais recentes', antigos: 'Mais antigos', nome: 'Nome (A–Z)', idade: 'Idade' };
+const porData = (a, b) => String(b.carimbo).localeCompare(String(a.carimbo));
+/** Ordem dos cards dentro de uma coluna. No modo manual, quem ainda não tem posição (novos) fica no topo. */
+function ordenaCards(lista) {
+  const modo = E.ordemCards;
+  return [...lista].sort((a, b) => {
+    if (modo === 'antigos') return -porData(a, b);
+    if (modo === 'nome') return a.nome.localeCompare(b.nome, 'pt-BR');
+    if (modo === 'idade') return (a.idade ?? 999) - (b.idade ?? 999);
+    if (modo === 'manual') {
+      const oa = Number(a.ordem) || 0, ob = Number(b.ordem) || 0;
+      if (oa && ob) return oa - ob;
+      if (oa || ob) return oa ? 1 : -1;
+    }
+    return porData(a, b);
+  });
+}
 
 function filtrosPadrao() {
   return { ocultos: [], areas: [], local: '', idadeMin: '', idadeMax: '', escolaridade: '', civil: '', de: '', ate: '' };
 }
 function salvaPrefs() {
-  try { localStorage.setItem('rz_prefs', JSON.stringify({ modo: E.modo, filtros: E.filtros, filtrosAbertos: E.filtrosAbertos })); } catch { /* sem armazenamento */ }
+  try { localStorage.setItem('rz_prefs', JSON.stringify({ modo: E.modo, filtros: E.filtros, filtrosAbertos: E.filtrosAbertos, ordemCards: E.ordemCards })); } catch { /* sem armazenamento */ }
 }
 try {
   const p = JSON.parse(localStorage.getItem('rz_prefs') || 'null');
   if (p) { E.modo = p.modo === 'lista' ? 'lista' : 'quadro'; E.filtros = { ...filtrosPadrao(), ...p.filtros };
+    if (ORDENS_CARDS[p.ordemCards]) E.ordemCards = p.ordemCards;
     if (!Array.isArray(E.filtros.areas)) E.filtros.areas = []; E.filtrosAbertos = p.filtrosAbertos !== false; }
 } catch { /* ignora preferências inválidas */ }
 
@@ -250,6 +268,8 @@ function renderCandidatos() {
         <div class="board-bar">
           <button class="btn btn-out btn-sm" id="abrir-filtros" ${E.filtrosAbertos ? 'hidden' : ''}><span data-ico="filter"></span>Filtros<span id="n-filtros"></span></button>
           <span class="result" id="resultado"></span>
+          <label class="ord-sel" id="ord-sel">Ordenar cards:
+            <select class="select" id="ordem-cards">${Object.entries(ORDENS_CARDS).map(([k, v]) => `<option value="${k}" ${E.ordemCards === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
           <div class="seg">
             <button data-modo="quadro"><span data-ico="board"></span>Quadro</button>
             <button data-modo="lista"><span data-ico="list"></span>Lista</button>
@@ -286,6 +306,7 @@ function renderCandidatos() {
   $('#recolher').addEventListener('click', alternaFiltros);
   $('#abrir-filtros').addEventListener('click', alternaFiltros);
   $$('[data-modo]').forEach((b) => b.addEventListener('click', () => { E.modo = b.dataset.modo; salvaPrefs(); renderResultado(); }));
+  $('#ordem-cards').addEventListener('change', (e) => { E.ordemCards = e.target.value; salvaPrefs(); renderResultado(); });
   renderResultado();
 }
 
@@ -333,19 +354,20 @@ function renderResultado() {
   const nAtivos = ['local', 'idadeMin', 'idadeMax', 'escolaridade', 'civil', 'de', 'ate'].filter((k) => f[k]).length + (f.ocultos.length ? 1 : 0) + (f.areas.length ? 1 : 0);
   $('#n-filtros').textContent = nAtivos ? ` (${nAtivos})` : '';
   $$('[data-modo]').forEach((b) => b.classList.toggle('ativo', b.dataset.modo === E.modo));
+  $('#ord-sel').hidden = E.modo !== 'quadro';
 
   if (!E.cands.length) {
     area.innerHTML = '<div class="panel empty"><span data-ico="users"></span><div>Nenhuma resposta na planilha ainda.</div></div>';
   } else if (E.modo === 'quadro') {
-    const ordenada = [...lista].sort((a, b) => String(b.carimbo).localeCompare(String(a.carimbo)));
+    const ordenada = ordenaCards(lista);
     // Coluna expandida: mostra só ela, ocupando a largura toda, com os cards em grade
     const expandida = visiveis.find((s) => s.id === E.expandida);
     const passo = expandida ? POR_COLUNA * 3 : POR_COLUNA;
     area.innerHTML = `<div class="board ${expandida ? 'expandido' : ''}">${(expandida ? [expandida] : visiveis).map((s) => {
       const todos = ordenada.filter((c) => c.status_id === s.id);
       const lim = E.limite[s.id] || passo;
-      return `<div class="col">
-        <div class="col-head"><span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}<span class="n">${todos.length}</span>
+      return `<div class="col" data-col-id="${esc(s.id)}">
+        <div class="col-head" ${expandida ? '' : `draggable="true" title="Arraste para mudar a coluna de lugar"`} data-col-head="${esc(s.id)}"><span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}<span class="n">${todos.length}</span>
           ${expandida ? '<button class="btn btn-out btn-sm" data-expandir="">Voltar ao quadro</button>'
             : `<button class="icon-btn col-exp" data-expandir="${esc(s.id)}" title="Expandir esta coluna"><span data-ico="expand"></span></button>`}</div>
         <div class="col-body" data-col="${esc(s.id)}">${todos.slice(0, lim).map((c) => cardHtml(c, s, notas[c.id])).join('') || '<div class="col-empty">Nenhum candidato</div>'}
@@ -411,26 +433,107 @@ function tabelaHtml(lista, notas) {
 }
 
 function ligarArrastar(area) {
-  let arrastando = null;
+  let arrastando = null, colArrastada = null;
+  const manual = E.ordemCards === 'manual';
+  const emGrade = !!$('.board.expandido', area);
+  const limpa = () => $$('.drop-antes, .drop-depois, .col-alvo', area).forEach((x) => x.classList.remove('drop-antes', 'drop-depois', 'col-alvo'));
+  // Onde o card vai cair: antes ou depois do card sob o ponteiro
+  const alvo = (e) => {
+    const card = e.target.closest('.card');
+    if (!card || card.dataset.abrir === arrastando) return null;
+    const r = card.getBoundingClientRect();
+    const antes = emGrade ? e.clientX < r.left + r.width / 2 : e.clientY < r.top + r.height / 2;
+    return { card, antes };
+  };
+
   $$('.card', area).forEach((card) => {
-    card.addEventListener('dragstart', (e) => { arrastando = card.dataset.abrir; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
-    card.addEventListener('dragend', () => { card.classList.remove('dragging'); arrastando = null; });
+    card.addEventListener('dragstart', (e) => { arrastando = card.dataset.abrir; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'card'); });
+    card.addEventListener('dragend', () => { card.classList.remove('dragging'); arrastando = null; limpa(); });
   });
   $$('[data-col]', area).forEach((col) => {
-    col.addEventListener('dragover', (e) => { if (arrastando) { e.preventDefault(); col.classList.add('drop'); } });
-    col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove('drop'); });
+    col.addEventListener('dragover', (e) => {
+      if (!arrastando) return;
+      e.preventDefault(); col.classList.add('drop');
+      if (!manual) return;
+      $$('.drop-antes, .drop-depois', area).forEach((x) => x.classList.remove('drop-antes', 'drop-depois'));
+      const a = alvo(e);
+      if (a) a.card.classList.add(a.antes ? 'drop-antes' : 'drop-depois');
+    });
+    col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) { col.classList.remove('drop'); limpa(); } });
     col.addEventListener('drop', (e) => {
+      if (!arrastando) return;
       e.preventDefault(); col.classList.remove('drop');
-      if (arrastando) mudarStatus(arrastando, col.dataset.col);
+      const a = manual ? alvo(e) : null;
+      const id = arrastando;
+      limpa();
+      moverCard(id, col.dataset.col, a?.card.dataset.abrir, a?.antes);
     });
   });
+
+  // Colunas: arrastar pelo cabeçalho
+  $$('[data-col-head][draggable]', area).forEach((head) => {
+    head.addEventListener('dragstart', (e) => { colArrastada = head.dataset.colHead; head.closest('.col').classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'coluna'); });
+    head.addEventListener('dragend', () => { head.closest('.col').classList.remove('dragging'); colArrastada = null; limpa(); });
+  });
+  $$('[data-col-id]', area).forEach((col) => {
+    col.addEventListener('dragover', (e) => {
+      if (!colArrastada || colArrastada === col.dataset.colId) return;
+      e.preventDefault();
+      $$('.col-alvo', area).forEach((x) => x.classList.remove('col-alvo'));
+      col.classList.add('col-alvo');
+    });
+    col.addEventListener('drop', (e) => {
+      if (!colArrastada) return;
+      e.preventDefault();
+      const origem = colArrastada;
+      limpa();
+      moverColuna(origem, col.dataset.colId);
+    });
+  });
+}
+
+async function moverCard(id, statusId, refId, antes) {
+  const c = candDe(id);
+  if (!c) return;
+  if (c.status_id !== statusId) await mudarStatus(id, statusId);
+  // Sem card de referência (soltou no espaço vazio) ou fora do modo manual: só muda de coluna
+  if (!refId || E.ordemCards !== 'manual' || c.status_id !== statusId) return;
+  // Reordena a coluna inteira (inclusive cards escondidos por filtros) e salva as posições
+  const coluna = ordenaCards(E.cands.filter((x) => x.status_id === statusId && x.id !== id));
+  let i = coluna.findIndex((x) => x.id === refId);
+  if (i < 0) return;
+  if (!antes) i++;
+  coluna.splice(i, 0, c);
+  coluna.forEach((x, k) => { x.ordem = k + 1; });
+  renderResultado();
+  try {
+    await api('ordenarCards', { ids: coluna.map((x) => x.id) });
+  } catch (err) {
+    toast(/desconhecida/i.test(err.message) ? 'Falta atualizar o código do Apps Script para salvar a ordem dos cards.' : err.message, true);
+  }
+}
+
+async function moverColuna(origem, destino) {
+  const ids = statusAtivos().map((s) => s.id);
+  const de = ids.indexOf(origem), para = ids.indexOf(destino);
+  if (de < 0 || para < 0 || de === para) return;
+  ids.splice(de, 1);
+  ids.splice(para, 0, origem);
+  const exc = statusExcluidos();
+  const todos = exc ? [...ids, exc.id] : ids;
+  todos.forEach((id, k) => { statusDe(id).ordem = k + 1; });
+  E.status.sort((a, b) => a.ordem - b.ordem);
+  renderResultado();
+  try { await api('ordenarStatus', { ids: todos }); toast('Ordem das colunas salva'); }
+  catch (err) { toast(err.message, true); }
 }
 
 async function mudarStatus(id, statusId) {
   const c = candDe(id);
   if (!c || c.status_id === statusId) return;
-  const anterior = c.status_id;
+  const anterior = c.status_id, ordemAnterior = c.ordem;
   c.status_id = statusId;
+  c.ordem = '';
   atualizaTela(id);
   try {
     const r = await api('mudarStatus', { id, status_id: statusId });
@@ -438,6 +541,7 @@ async function mudarStatus(id, statusId) {
     toast(`${c.nome.split(' ')[0]} → ${statusDe(statusId).nome}`);
   } catch (err) {
     c.status_id = anterior;
+    c.ordem = ordemAnterior;
     toast(err.message, true);
   }
   atualizaTela(id);

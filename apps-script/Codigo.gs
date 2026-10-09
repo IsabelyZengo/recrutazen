@@ -10,7 +10,7 @@
 
 const ABAS = {
   status: { nome: 'RZ_Status', cab: ['id', 'nome', 'cor', 'ordem', 'inicial'] },
-  cand: { nome: 'RZ_Candidatos', cab: ['id', 'status_id', 'atualizado_em'] },
+  cand: { nome: 'RZ_Candidatos', cab: ['id', 'status_id', 'atualizado_em', 'ordem'] },
   hist: { nome: 'RZ_Historico', cab: ['id', 'candidato_id', 'autor', 'tipo', 'texto', 'criado_em'] },
   usu: { nome: 'RZ_Usuarios', cab: ['id', 'nome', 'login', 'senha_hash', 'admin', 'criado_em'] },
 };
@@ -43,6 +43,7 @@ const ACOES = {
   novidades: { fn: acaoNovidades },
   criarCandidato: { escrita: true, fn: acaoCriarCandidato },
   mudarStatus: { escrita: true, fn: acaoMudarStatus },
+  ordenarCards: { escrita: true, fn: acaoOrdenarCards },
   nota: { escrita: true, fn: acaoNota },
   salvarStatus: { escrita: true, fn: acaoSalvarStatus },
   ordenarStatus: { escrita: true, fn: acaoOrdenarStatus },
@@ -393,7 +394,7 @@ function acaoDados(req, usuario) {
     }
     const valido = status.some((s) => s.id === e.status_id);
     return { id: l.id, linha: l.linha, carimbo: l.carimbo, respostas: l.respostas, status_id: valido ? e.status_id : inicial, atualizado_em: e.atualizado_em,
-      manual: !!l.manual, autor: l.autor || '' };
+      manual: !!l.manual, autor: l.autor || '', ordem: e.ordem || '' };
   });
   inserir(ABAS.cand, novos);
 
@@ -425,9 +426,27 @@ function acaoMudarStatus(req, u) {
   const anterior = status.find((s) => s.id === e.status_id);
   e.status_id = novo.id;
   e.atualizado_em = agora();
+  e.ordem = ''; // ao trocar de coluna, o card vai para o topo da nova coluna
   gravar(ABAS.cand, e);
   const h = registra(e.id, u.nome, 'status', 'Status alterado de "' + (anterior ? anterior.nome : '—') + '" para "' + novo.nome + '".');
   return { historico: h, atualizado_em: e.atualizado_em };
+}
+
+/** Grava a posição manual dos cards (ids na ordem desejada) numa única escrita. */
+function acaoOrdenarCards(req) {
+  const ids = Array.isArray(req.ids) ? req.ids.map(String) : [];
+  const s = aba(ABAS.cand);
+  const n = s.getLastRow();
+  if (n < 2 || !ids.length) return { ok: true };
+  const col = ABAS.cand.cab.indexOf('ordem') + 1;
+  const pos = {};
+  ids.forEach((id, i) => { pos[id] = i + 1; });
+  const idsPlanilha = s.getRange(2, 1, n - 1, 1).getValues().map((r) => String(r[0]));
+  const atual = s.getRange(2, col, n - 1, 1).getValues();
+  s.getRange(1, col).setValue('ordem').setFontWeight('bold');
+  s.getRange(2, col, n - 1, 1).setNumberFormat('@')
+    .setValues(idsPlanilha.map((id, i) => [pos[id] != null ? String(pos[id]) : atual[i][0]]));
+  return { ok: true };
 }
 
 function acaoNota(req, u) {

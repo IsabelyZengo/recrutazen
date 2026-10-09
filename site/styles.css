@@ -326,3 +326,13 @@ table.list tbody tr:hover { background: var(--sf2); }
 .grp-head { display: flex; align-items: baseline; gap: 8px; }
 .link-btn { margin-left: auto; border: 0; background: none; padding: 0; color: var(--pri); font-weight: 700; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .link-btn:hover { text-decoration: underline; }
+.ord-sel { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--mu); }
+.ord-sel .select { height: 34px; width: auto; padding: 0 8px; font-weight: 700; }
+.ord-sel:not([hidden]) + .seg { margin-left: 0; }
+.col-head[draggable="true"] { cursor: grab; }
+.col.dragging { opacity: .45; }
+.col.col-alvo { outline: 2px dashed var(--pri); outline-offset: 2px; }
+.card.drop-antes { box-shadow: 0 -4px 0 0 var(--pri); }
+.card.drop-depois { box-shadow: 0 4px 0 0 var(--pri); }
+.board.expandido .card.drop-antes { box-shadow: -4px 0 0 0 var(--pri); }
+.board.expandido .card.drop-depois { box-shadow: 4px 0 0 0 var(--pri); }
