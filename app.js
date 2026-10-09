@@ -137,8 +137,11 @@ function deriva(c) {
   $('#sair').addEventListener('click', () => { salvaToken(null); location.href = 'login.html'; });
   $('#trocar-senha').addEventListener('click', trocarSenha);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('.dialog-wrap')) fecharCandidato(); });
-  // Busca novas respostas a cada 3 minutos enquanto a aba estiver visível
-  setInterval(() => { if (document.visibilityState === 'visible' && !$('.dialog-wrap')) atualizar(false); }, 180000);
+  // Novas respostas: checagem leve a cada 30 s (se o Apps Script já tiver a ação "novidades");
+  // senão, recarrega tudo a cada 3 minutos como antes
+  setInterval(checarNovidades, 30000);
+  setInterval(() => { if (E.semNovidades && document.visibilityState === 'visible' && !$('.dialog-wrap')) atualizar(false); }, 180000);
+  document.addEventListener('visibilitychange', checarNovidades);
 
   window.addEventListener('hashchange', rotear);
   rotear();
@@ -148,6 +151,7 @@ async function carregar() {
   const d = await api('dados');
   E.me = d.usuario; E.perguntas = d.perguntas; E.campos = d.campos; E.status = d.status;
   E.hist = d.historico; E.planilhaUrl = d.planilhaUrl;
+  if (d.assinatura) E.assinatura = d.assinatura; else E.semNovidades = true;
   E.cands = d.candidatos.map(deriva);
 }
 async function atualizar(manual) {
@@ -165,6 +169,16 @@ async function atualizar(manual) {
   } catch (err) { if (manual) toast(err.message, true); }
   E.carregando = false;
   $('#atualizar').classList.remove('girando');
+}
+
+async function checarNovidades() {
+  if (E.semNovidades || E.carregando || document.visibilityState !== 'visible' || $('.dialog-wrap')) return;
+  try {
+    const { assinatura } = await api('novidades');
+    if (assinatura && assinatura !== E.assinatura) await atualizar(false);
+  } catch (err) {
+    if (/desconhecida/i.test(err.message)) E.semNovidades = true;
+  }
 }
 
 function rotear() {
