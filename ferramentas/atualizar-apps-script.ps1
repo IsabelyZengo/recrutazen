@@ -19,8 +19,21 @@
   try {
     Write-Host ''
     Write-Host '=== RecrutaZen: atualizar o Apps Script ===' -ForegroundColor Cyan
+    # Node.js: se nao estiver instalado, instala sozinho pelo winget (gerenciador de programas do Windows)
     if (-not (Get-Command npx.cmd -ErrorAction SilentlyContinue)) {
-      throw 'Node.js nao encontrado. Instale a versao LTS em https://nodejs.org, feche e abra o PowerShell de novo.'
+      if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Start-Process 'https://nodejs.org'
+        throw 'Node.js nao encontrado. Abri o site: baixe a versao LTS, instale (Next, Next, Install), feche o PowerShell, abra de novo e cole o comando outra vez.'
+      }
+      Write-Host ''
+      Write-Host '[0/4] Instalando o Node.js (so desta vez, leva 1 a 2 minutos)...' -ForegroundColor Yellow
+      Write-Host '      Se o Windows perguntar se permite alteracoes, clique em SIM.'
+      winget install --id OpenJS.NodeJS.LTS -e --silent --accept-source-agreements --accept-package-agreements
+      # Recarrega o PATH para enxergar o Node sem precisar fechar o PowerShell
+      $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+      if (-not (Get-Command npx.cmd -ErrorAction SilentlyContinue)) {
+        throw 'O Node.js foi instalado, mas o PowerShell ainda nao o enxerga. Feche o PowerShell, abra de novo e cole o comando outra vez.'
+      }
     }
 
     $pasta = Join-Path $env:LOCALAPPDATA 'RecrutaZen-AppsScript'
