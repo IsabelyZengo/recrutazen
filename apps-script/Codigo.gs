@@ -309,6 +309,10 @@ function acaoCriarCandidato(req, u) {
   const campos = detectaCampos(perguntas);
   const dados = req.respostas || {};
   if (campos.nome == null || !txt(dados[perguntas[campos.nome]])) throw erro('Informe o nome do candidato.');
+  // Currículo enviado pelo sistema: salva no Drive e grava o link na coluna do currículo
+  if (req.curriculo && req.curriculo.dados && campos.curriculo != null) {
+    dados[perguntas[campos.curriculo]] = salvaCurriculoNoDrive(req.curriculo, txt(dados[perguntas[campos.nome]], 80), principal, campos);
+  }
 
   let s = ss.getSheetByName(ABA_MANUAL);
   if (!s) {
@@ -334,6 +338,38 @@ function acaoCriarCandidato(req, u) {
 
   inserir(ABAS.cand, [{ id, status_id: statusPendente(listaStatus()).id, atualizado_em: agora() }]);
   return { id };
+}
+
+const TIPOS_CV = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+/** Pasta dos currículos: a mesma onde o Google Forms guarda os anexos (ou "RecrutaZen - Currículos", se não achar). */
+function pastaCurriculos(principal, campos) {
+  const props = PropertiesService.getScriptProperties();
+  const salva = props.getProperty('RZ_PASTA_CV');
+  if (salva) { try { return DriveApp.getFolderById(salva); } catch (e) { /* pasta apagada: procura outra */ } }
+  let pasta = null;
+  const n = principal.getLastRow();
+  if (n > 1) {
+    const links = principal.getRange(2, campos.curriculo + 1, n - 1, 1).getDisplayValues();
+    for (let i = links.length - 1; i >= 0 && !pasta; i--) {
+      const id = idsDrive(links[i][0])[0];
+      if (!id) continue;
+      try { const pais = DriveApp.getFileById(id).getParents(); if (pais.hasNext()) pasta = pais.next(); } catch (e) { /* sem acesso: tenta o próximo */ }
+    }
+  }
+  if (!pasta) pasta = DriveApp.createFolder('RecrutaZen - Currículos');
+  props.setProperty('RZ_PASTA_CV', pasta.getId());
+  return pasta;
+}
+function salvaCurriculoNoDrive(cv, nomeCandidato, principal, campos) {
+  const original = txt(cv.nome, 150) || 'curriculo';
+  const ext = (original.split('.').pop() || '').toLowerCase();
+  if (!TIPOS_CV[ext]) throw erro('Formato de currículo não aceito. Use PDF, Word (DOC/DOCX) ou imagem.');
+  const bytes = Utilities.base64Decode(String(cv.dados));
+  if (bytes.length > MAX_CV_BYTES) throw erro('O currículo deve ter no máximo 10 MB.');
+  const nome = (nomeCandidato ? nomeCandidato + ' - ' : '') + original;
+  const arquivo = pastaCurriculos(principal, campos).createFile(Utilities.newBlob(bytes, TIPOS_CV[ext], nome));
+  return 'https://drive.google.com/open?id=' + arquivo.getId();
 }
 
 // ───────────────────────── Status ─────────────────────────

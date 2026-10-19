@@ -336,3 +336,11 @@ table.list tbody tr:hover { background: var(--sf2); }
 .card.drop-depois { box-shadow: 0 4px 0 0 var(--pri); }
 .board.expandido .card.drop-antes { box-shadow: -4px 0 0 0 var(--pri); }
 .board.expandido .card.drop-depois { box-shadow: 4px 0 0 0 var(--pri); }
+.cv-zona { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 16px; border: 2px dashed var(--bd2); border-radius: 12px; background: var(--sf2); cursor: pointer; transition: .15s; }
+.cv-zona:hover, .cv-zona.over { border-color: var(--pri); background: var(--pri-l); }
+.cv-zona.com-arquivo { border-style: solid; border-color: #86efac; background: #f0fdf4; }
+.cv-zona > span svg { width: 28px; height: 28px; color: var(--pri); }
+.cv-zona > div { flex: 1; min-width: 0; }
+.cv-zona small { color: var(--mu); font-weight: 600; }
+.cv-status { font-size: 12.5px; color: var(--mu); margin-top: 2px; }
+.input.preenchido, .textarea.preenchido { background: #f0fdf4; border-color: #86efac; }

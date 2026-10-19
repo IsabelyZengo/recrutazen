@@ -235,6 +235,7 @@ function renderCandidatos() {
       <div><h1>Candidatos</h1><p>Respostas do formulário “Trabalhe conosco” — triagem, entrevistas e contratações</p></div>
       <div class="acts">
         <button class="btn btn-out" data-go="status"><span data-ico="tag"></span>Status</button>
+        <button class="btn btn-out" id="importar-cv"><span data-ico="upload"></span>Importar currículo</button>
         <button class="btn btn-pri" id="novo-candidato"><span data-ico="plus"></span>Novo candidato</button>
       </div>
     </div>
@@ -280,7 +281,8 @@ function renderCandidatos() {
     </div>`;
 
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => { location.hash = b.dataset.go; }));
-  $('#novo-candidato').addEventListener('click', novoCandidato);
+  $('#novo-candidato').addEventListener('click', () => novoCandidato());
+  $('#importar-cv').addEventListener('click', () => novoCandidato({ pedirArquivo: true }));
   $$('[data-f]').forEach((el) => {
     el.value = f[el.dataset.f] ?? '';
     el.addEventListener('input', () => { f[el.dataset.f] = el.value; E.limite = {}; salvaPrefs(); renderResultado(); });
@@ -596,8 +598,19 @@ function renderExcluidos() {
 }
 
 // ───────────────────────── Cadastro manual ─────────────────────────
-function novoCandidato() {
+const MAX_CV = 10 * 1024 * 1024;
+const EXT_CV = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp'];
+
+function novoCandidato({ pedirArquivo = false } = {}) {
   const C = E.campos;
+  const idxPergunta = (re) => E.perguntas.findIndex((p) => re.test(p));
+  // Onde cada dado lido do currículo vai parar no formulário
+  const destino = {
+    nome: C.nome, idade: C.idade, local: C.local, telefone: C.telefone, estadoCivil: C.estadoCivil,
+    nascimento: C.nascimento, escolaridade: C.escolaridade, areas: C.areas,
+    cursos: idxPergunta(/^cursos/i), experiencia: idxPergunta(/empresas/i), habilidades: idxPergunta(/sabe fazer/i),
+  };
+  let arquivoCv = null;
   const curtos = ['nome', 'idade', 'local', 'telefone', 'estadoCivil', 'nascimento', 'escolaridade', 'curriculo'].map((k) => C[k]);
   const areas = opcoesContadas(E.cands.flatMap((c) => c.areas)).map(([, v]) => v.rotulo);
   const dica = (i) => i === C.nascimento ? 'dd/mm/aaaa' : i === C.areas ? 'Separe várias áreas por vírgula' : i === C.curriculo ? 'Cole o link do currículo, se tiver' : '';
@@ -617,6 +630,13 @@ function novoCandidato() {
   w.innerHTML = `<form class="dialog dialog-grande">
     <h3>Novo candidato</h3>
     <p>Os dados ficam salvos na aba <b>Cadastro manual (RecrutaZen)</b> da planilha e o card entra no quadro como <b>${esc(statusEntrada()?.nome || 'Pendente')}</b>.</p>
+    <input type="file" id="cv-arquivo" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" hidden>
+    <div class="cv-zona" id="cv-zona" tabindex="0" role="button">
+      <span data-ico="upload"></span>
+      <div><b>Enviar currículo</b> <small>(PDF, Word ou foto — até 10 MB)</small>
+        <div class="cv-status" id="cv-status">Clique ou arraste o arquivo aqui. Os dados encontrados preenchem o formulário, e o arquivo é salvo no Google Drive.</div></div>
+      <button type="button" class="icon-btn" id="cv-remover" title="Remover arquivo" hidden><span data-ico="x"></span></button>
+    </div>
     <div class="form-grid">
       ${ordem.map(({ p, i }) => campo(p, i)).join('')}
     </div>
@@ -627,6 +647,51 @@ function novoCandidato() {
   const fechar = () => w.remove();
   w.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); fechar(); } });
   $('[data-cancelar]', w).addEventListener('click', fechar);
+
+  // ── Currículo: leitura e preenchimento automático ──
+  const zona = $('#cv-zona', w), status = $('#cv-status', w), inputCv = $('#cv-arquivo', w);
+  const campoLink = $(`[name="p${C.curriculo}"]`, w);
+  const escolherCv = async (f) => {
+    if (!f) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!EXT_CV.includes(ext)) return toast('Formato não aceito. Use PDF, Word (DOC/DOCX) ou imagem.', true);
+    if (f.size > MAX_CV) return toast('O currículo deve ter no máximo 10 MB.', true);
+    arquivoCv = f;
+    zona.classList.add('com-arquivo');
+    $('#cv-remover', w).hidden = false;
+    if (campoLink) { campoLink.value = ''; campoLink.disabled = true; campoLink.placeholder = 'O arquivo enviado será salvo no Drive'; }
+    status.textContent = `${f.name} — lendo…`;
+    try {
+      const texto = await extrairTextoCurriculo(f, (msg) => { status.textContent = `${f.name} — ${msg}`; });
+      const dados = texto ? interpretarCurriculo(texto) : {};
+      const preenchidos = [];
+      Object.entries(dados).forEach(([k, v]) => {
+        const i = destino[k];
+        const el = i != null && i >= 0 ? $(`[name="p${i}"]`, w) : null;
+        if (el && !el.value.trim() && v) { el.value = v; el.classList.add('preenchido'); preenchidos.push(k); }
+      });
+      const nomes = { nome: 'nome', idade: 'idade', local: 'bairro/cidade', telefone: 'telefone', estadoCivil: 'estado civil', nascimento: 'nascimento',
+        escolaridade: 'escolaridade', areas: 'áreas', cursos: 'cursos', experiencia: 'experiência', habilidades: 'habilidades' };
+      status.innerHTML = !texto ? `<b>${esc(f.name)}</b> — este formato não pode ser lido; o arquivo será anexado e você preenche os dados.`
+        : preenchidos.length ? `<b>${esc(f.name)}</b> — preenchi: ${preenchidos.map((k) => nomes[k]).join(', ')}. <b>Confira os campos em verde</b> antes de salvar.`
+        : `<b>${esc(f.name)}</b> — não encontrei dados reconhecíveis; o arquivo será anexado e você preenche os campos.`;
+    } catch (err) {
+      status.innerHTML = `<b>${esc(f.name)}</b> — não consegui ler o arquivo (${esc(err.message)}). Ele será anexado mesmo assim.`;
+    }
+  };
+  zona.addEventListener('click', (e) => { if (!e.target.closest('#cv-remover')) inputCv.click(); });
+  zona.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputCv.click(); } });
+  inputCv.addEventListener('change', () => escolherCv(inputCv.files[0]));
+  ['dragenter', 'dragover'].forEach((ev) => zona.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => zona.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.remove('over'); }));
+  zona.addEventListener('drop', (e) => escolherCv(e.dataTransfer.files[0]));
+  $('#cv-remover', w).addEventListener('click', () => {
+    arquivoCv = null; inputCv.value = '';
+    zona.classList.remove('com-arquivo'); $('#cv-remover', w).hidden = true;
+    status.textContent = 'Clique ou arraste o arquivo aqui. Os dados encontrados preenchem o formulário, e o arquivo é salvo no Google Drive.';
+    if (campoLink) { campoLink.disabled = false; campoLink.placeholder = 'Cole o link do currículo, se tiver'; }
+  });
+  $$('.form-grid [name]', w).forEach((el) => el.addEventListener('input', () => el.classList.remove('preenchido')));
   $('form', w).addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -635,8 +700,19 @@ function novoCandidato() {
     const btn = $('#salvar-cand', w);
     btn.disabled = true; btn.textContent = 'Salvando…';
     try {
-      // Sem status_id: o Apps Script usa o status inicial (Pendente)
-      const r = await api('criarCandidato', { respostas });
+      const curriculo = arquivoCv ? {
+        nome: arquivoCv.name,
+        tipo: arquivoCv.type,
+        dados: await new Promise((ok, falha) => {
+          const fr = new FileReader();
+          fr.onload = () => ok(String(fr.result).split(',')[1]);
+          fr.onerror = () => falha(new Error('Não foi possível ler o arquivo do currículo.'));
+          fr.readAsDataURL(arquivoCv);
+        }),
+      } : undefined;
+      if (curriculo) btn.textContent = 'Enviando currículo…';
+      // Sem status_id: o Apps Script usa o status de entrada (Pendente)
+      const r = await api('criarCandidato', { respostas, curriculo });
       fechar();
       toast('Candidato cadastrado');
       await carregar();
@@ -648,7 +724,8 @@ function novoCandidato() {
     }
   });
   document.body.append(w);
-  $('input[name="p' + C.nome + '"]', w)?.focus();
+  icones(w);
+  if (pedirArquivo) inputCv.click(); else $('input[name="p' + C.nome + '"]', w)?.focus();
 }
 
 // ───────────────────────── Ficha do candidato ─────────────────────────
