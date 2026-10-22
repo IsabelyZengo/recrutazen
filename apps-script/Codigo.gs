@@ -52,6 +52,7 @@ const ACOES = {
   usuarios: { admin: true, fn: acaoUsuarios },
   criarUsuario: { admin: true, escrita: true, fn: acaoCriarUsuario },
   senhaUsuario: { admin: true, escrita: true, fn: acaoSenhaUsuario },
+  editarUsuario: { admin: true, escrita: true, fn: acaoEditarUsuario },
   excluirUsuario: { admin: true, escrita: true, fn: acaoExcluirUsuario },
 };
 
@@ -207,6 +208,24 @@ function acaoSenhaUsuario(req) {
   if (!u) throw erro('Usuário não encontrado.');
   if (String(req.senha || '').length < 6) throw erro('A senha precisa ter pelo menos 6 caracteres.');
   u.senha_hash = hashSenha(String(req.senha));
+  gravar(ABAS.usu, u);
+  return { ok: true };
+}
+function acaoEditarUsuario(req, eu) {
+  const usuarios = ler(ABAS.usu);
+  const u = usuarios.find((x) => x.id === req.id);
+  if (!u) throw erro('Usuário não encontrado.');
+  const nome = txt(req.nome, 80), login = txt(req.login, 40);
+  if (!nome || !login) throw erro('Informe nome e usuário.');
+  if (usuarios.some((x) => x.id !== u.id && String(x.login).trim().toLowerCase() === login.toLowerCase())) throw erro('Já existe outra pessoa com esse usuário (login).');
+  const admin = ehSim(req.admin);
+  if (!admin && ehSim(u.admin)) {
+    if (u.id === eu.id) throw erro('Você não pode tirar o seu próprio acesso de administrador. Peça para outro administrador fazer isso.');
+    if (!usuarios.some((x) => x.id !== u.id && ehSim(x.admin))) throw erro('É preciso ter pelo menos um administrador.');
+  }
+  u.nome = nome;
+  u.login = login;
+  u.admin = admin ? '1' : '0';
   gravar(ABAS.usu, u);
   return { ok: true };
 }
