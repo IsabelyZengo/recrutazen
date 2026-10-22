@@ -2,7 +2,7 @@
 #  RecrutaZen - atualiza o Apps Script da planilha com o codigo do GitHub
 #  Uso no PowerShell (pode colar direto na janela):
 #    [Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://raw.githubusercontent.com/IsabelyZengo/recrutazen/main/ferramentas/atualizar-apps-script.ps1 | iex
-#  Precisa do Node.js (https://nodejs.org, versao LTS).
+#  Se o PC nao tiver Node.js, ele baixa a versao portatil sozinho (sem senha de administrador).
 # ==========================================================================
 & {
   $ErrorActionPreference = 'Continue'
@@ -19,21 +19,29 @@
   try {
     Write-Host ''
     Write-Host '=== RecrutaZen: atualizar o Apps Script ===' -ForegroundColor Cyan
-    # Node.js: se nao estiver instalado, instala sozinho pelo winget (gerenciador de programas do Windows)
-    if (-not (Get-Command npx.cmd -ErrorAction SilentlyContinue)) {
-      if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Start-Process 'https://nodejs.org'
-        throw 'Node.js nao encontrado. Abri o site: baixe a versao LTS, instale (Next, Next, Install), feche o PowerShell, abra de novo e cole o comando outra vez.'
-      }
+    # Node.js: se nao estiver instalado, usa a versao PORTATIL (zip oficial do nodejs.org).
+    # Nao instala nada no Windows e NAO precisa de senha de administrador.
+    $pastaNode = Join-Path $env:LOCALAPPDATA 'RecrutaZen-Node'
+    $nodeLocal = Get-ChildItem $pastaNode -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'npx.cmd') } | Select-Object -First 1
+    if ($nodeLocal) { $env:Path = $nodeLocal.FullName + ';' + $env:Path }
+    if ($env:RZ_NODE_PORTATIL -eq '1' -or -not (Get-Command npx.cmd -ErrorAction SilentlyContinue)) {
       Write-Host ''
-      Write-Host '[0/4] Instalando o Node.js (so desta vez, leva 1 a 2 minutos)...' -ForegroundColor Yellow
-      Write-Host '      Se o Windows perguntar se permite alteracoes, clique em SIM.'
-      winget install --id OpenJS.NodeJS.LTS -e --silent --accept-source-agreements --accept-package-agreements
-      # Recarrega o PATH para enxergar o Node sem precisar fechar o PowerShell
-      $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
-      if (-not (Get-Command npx.cmd -ErrorAction SilentlyContinue)) {
-        throw 'O Node.js foi instalado, mas o PowerShell ainda nao o enxerga. Feche o PowerShell, abra de novo e cole o comando outra vez.'
-      }
+      Write-Host '[0/4] Baixando o Node.js portatil (so desta vez, uns 30 MB, sem senha de administrador)...' -ForegroundColor Yellow
+      $versoes = Invoke-RestMethod -UseBasicParsing 'https://nodejs.org/dist/index.json'
+      $lts = $versoes | Where-Object { $_.lts } | Select-Object -First 1
+      $arq = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
+      $nome = "node-$($lts.version)-$arq"
+      New-Item -ItemType Directory -Force -Path $pastaNode | Out-Null
+      $zip = Join-Path $pastaNode "$nome.zip"
+      $ProgressPreference = 'SilentlyContinue'
+      Invoke-WebRequest -UseBasicParsing "https://nodejs.org/dist/$($lts.version)/$nome.zip" -OutFile $zip
+      Write-Host '      Descompactando...'
+      Expand-Archive -Path $zip -DestinationPath $pastaNode -Force
+      Remove-Item $zip -Force
+      $ProgressPreference = 'Continue'
+      $env:Path = (Join-Path $pastaNode $nome) + ';' + $env:Path
+      if (-not (Test-Path (Join-Path (Join-Path $pastaNode $nome) 'npx.cmd'))) { throw 'nao consegui preparar o Node.js portatil.' }
+      Write-Host "      Node.js $($lts.version) pronto."
     }
 
     $pasta = Join-Path $env:LOCALAPPDATA 'RecrutaZen-AppsScript'
