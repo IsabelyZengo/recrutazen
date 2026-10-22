@@ -964,12 +964,27 @@ async function renderUsuarios() {
         <div class="avatar">${esc(u.nome.trim()[0]?.toUpperCase() || '?')}</div>
         <div class="grow"><b>${esc(u.nome)}</b><div class="meta">${esc(u.login)} · desde ${fmtData(u.criado_em)}</div></div>
         <span class="badge ${u.admin ? '' : 'off'}">${u.admin ? 'Administrador' : 'Recrutador'}</span>
+        <button class="icon-btn" data-editar title="Editar nome, usuário e tipo"><span data-ico="edit"></span></button>
         <button class="icon-btn" data-senha title="Redefinir senha"><span data-ico="key"></span></button>
         ${u.id === E.me.id ? '' : '<button class="icon-btn" data-excluir title="Excluir usuário"><span data-ico="trash"></span></button>'}
       </div>`).join('');
     icones($('#lista-usuarios'));
     $$('#lista-usuarios .cfg-row').forEach((row) => {
       const u = usuarios.find((x) => x.id === row.dataset.id);
+      $('[data-editar]', row).addEventListener('click', async () => {
+        const v = await dialogo({ titulo: `Editar ${u.nome}`, confirmar: 'Salvar', campos: [
+          { name: 'nome', label: 'Nome', valor: u.nome },
+          { name: 'login', label: 'Usuário (login)', valor: u.login },
+          { name: 'admin', label: 'Administrador (pode gerenciar usuários). Desmarcado = Recrutador', type: 'checkbox', valor: u.admin }] });
+        if (!v) return;
+        try {
+          await api('editarUsuario', { id: u.id, ...v });
+          if (u.id === E.me.id) { E.me.nome = v.nome; $('#user-nome').textContent = v.nome; $('#avatar').textContent = v.nome.trim()[0]?.toUpperCase() || '?'; }
+          toast('Usuário atualizado'); renderUsuarios();
+        } catch (err) {
+          toast(/desconhecida/i.test(err.message) ? 'Falta atualizar o Apps Script (rode o script de atualização no PowerShell).' : err.message, true);
+        }
+      });
       $('[data-senha]', row).addEventListener('click', async () => {
         const v = await dialogo({ titulo: `Nova senha para ${u.nome}`, confirmar: 'Salvar', campos: [{ name: 'senha', label: 'Nova senha (mín. 6 caracteres)', type: 'password' }] });
         if (!v) return;
@@ -1002,8 +1017,8 @@ function dialogo({ titulo, texto = '', campos = [], confirmar = 'OK', perigo = f
     w.innerHTML = `<form class="dialog">
       <h3>${esc(titulo)}</h3>${texto ? `<p>${esc(texto)}</p>` : ''}
       ${campos.length ? `<div class="fields">${campos.map((c) => c.type === 'checkbox'
-        ? `<label class="consent"><input type="checkbox" name="${c.name}"><span>${esc(c.label)}</span></label>`
-        : `<label class="field"><span>${esc(c.label)}</span><input class="input" name="${c.name}" type="${c.type || 'text'}" required ${c.type === 'password' ? 'autocomplete="new-password"' : ''}></label>`).join('')}</div>` : ''}
+        ? `<label class="consent"><input type="checkbox" name="${c.name}" ${c.valor ? 'checked' : ''}><span>${esc(c.label)}</span></label>`
+        : `<label class="field"><span>${esc(c.label)}</span><input class="input" name="${c.name}" type="${c.type || 'text'}" value="${esc(c.valor ?? '')}" required ${c.type === 'password' ? 'autocomplete="new-password"' : ''}></label>`).join('')}</div>` : ''}
       <div class="acts"><button type="button" class="btn btn-ghost" data-cancelar>Cancelar</button>
         <button class="btn ${perigo ? 'btn-danger' : 'btn-pri'}">${esc(confirmar)}</button></div>
     </form>`;
